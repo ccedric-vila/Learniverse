@@ -1,0 +1,8 @@
+{
+  "name": "learniverse",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ]
+}
