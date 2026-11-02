@@ -1,7 +1,13 @@
 const express = require('express');
 const multer = require('multer');
 const { authorize, protect } = require('../src/auth/authMiddleware');
-const { getClassDetails, getClassStudents, getDashboard } = require('./professorController');
+const {
+	createClassOffering,
+	getClassCreationOptions,
+	getClassDetails,
+	getClassStudents,
+	getDashboard,
+} = require('./professorController');
 const { createQuiz, getProfessorQuizzes } = require('../quizzes/quizController');
 const {
 	deleteProfessorMaterial,
@@ -35,6 +41,8 @@ const router = express.Router();
 
 router.use(protect, authorize('PROFESSOR'));
 router.get('/dashboard', getDashboard);
+router.get('/classes/options', getClassCreationOptions);
+router.post('/classes', createClassOffering);
 router.get('/classes/:classId/students', getClassStudents);
 router.get('/classes/:classId/quizzes', getProfessorQuizzes);
 router.post('/classes/:classId/quizzes', createQuiz);

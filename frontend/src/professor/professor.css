@@ -10,9 +10,29 @@
 .professor-stat-icon { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border-radius: 12px; color: #477b6e; background: #eaf3ef; }
 .professor-stat-icon.mint { color: #55847b; background: #e8f2f2; }
 .professor-stat-icon.gold { color: #9a7950; background: #f5f0e7; }
-.professor-stat div { display: grid; gap: 4px; }
+.professor-stat > div { display: grid; gap: 4px; }
 .professor-stat small { color: #7b898e; font-size: 10px; }
 .professor-stat strong { color: #1a3140; font-family: Manrope, sans-serif; font-size: 25px; letter-spacing: -.04em; }
+.professor-student-stat { position: relative; z-index: 1; display: block; min-width: 0; padding: 0; overflow: visible; }
+.professor-student-stat:hover, .professor-student-stat:focus-within, .professor-student-stat[open] { z-index: 10; }
+.professor-student-stat-summary { display: flex; min-height: 100px; align-items: center; gap: 13px; padding: 16px 19px; border-radius: 11px; cursor: pointer; list-style: none; }
+.professor-student-stat-summary::-webkit-details-marker { display: none; }
+.professor-student-stat-summary::marker { content: ''; }
+.professor-student-stat-summary:focus-visible { outline: 2px solid #6d9f90; outline-offset: -3px; border-radius: 11px; }
+.professor-student-stat-copy { display: grid; min-width: 0; gap: 4px; }
+.professor-student-stat-copy small { color: #7b898e; font-size: 10px; }
+.professor-student-stat-copy strong { color: #1a3140; font-family: Manrope, sans-serif; font-size: 25px; letter-spacing: -.04em; }
+.professor-student-stat-copy > span { color: #7b898e; font-size: 8px; }
+.professor-student-class-preview { position: absolute; top: calc(100% + 8px); left: 0; display: none; width: min(340px, calc(100vw - 40px)); max-height: min(380px, 60vh); gap: 7px; padding: 12px; overflow-y: auto; border: 1px solid #dce8e2; border-radius: 11px; background: #fff; box-shadow: 0 14px 34px rgb(26 49 64 / 18%); }
+.professor-student-stat:hover .professor-student-class-preview,
+.professor-student-stat:focus-within .professor-student-class-preview,
+.professor-student-stat[open] .professor-student-class-preview { display: grid; }
+.professor-student-class-preview > strong { color: #526963; font-size: 9px; }
+.professor-student-class-preview > span { color: #879499; font-size: 9px; }
+.professor-student-class-preview > a { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 7px; border-radius: 6px; color: #50636a; background: #f7faf8; font-size: 8px; text-decoration: none; }
+.professor-student-class-preview > a:hover { color: #285d53; background: #edf5f0; }
+.professor-student-class-preview > a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.professor-student-class-preview > a b { flex: 0 0 auto; color: #39766b; font-size: 9px; }
 .professor-section { margin-top: 26px; scroll-margin-top: 20px; }
 .professor-section-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 12px; }
 .professor-section-heading h2 { margin: 4px 0 0; color: #1e3442; font-family: Manrope, sans-serif; font-size: 20px; letter-spacing: -.04em; }
@@ -413,7 +433,7 @@
 .professor-dashboard .professor-join-code strong { border-color: #cfe2d7; background: #f1f8f2; }
 
 .professor-dashboard-home { padding-bottom: 56px; }
-.professor-dashboard-home .professor-welcome { min-height: 225px; }
+.professor-dashboard-home .professor-welcome { min-height: 172px; }
 .professor-dashboard-home .professor-welcome > div:first-child { max-width: 760px; }
 .professor-welcome-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 20px; }
 .professor-welcome-actions > a { display: inline-flex; min-height: 35px; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid rgb(71 123 94 / 16%); border-radius: 7px; color: #39715b; background: rgb(255 255 255 / 62%); font-size: 10px; font-weight: 700; text-decoration: none; transition: background .16s ease, border-color .16s ease, transform .16s ease; }
@@ -741,4 +761,268 @@
 @media (prefers-reduced-motion: reduce) {
   .professor-files-refresh, .professor-all-file-card, .material-dialog-cancel, .material-dialog-submit { transition: none; }
   .professor-files-spinner { animation-duration: 2s; }
+}
+
+.app-shell.authenticated-shell.professor-app-shell { grid-template-columns: 64px minmax(0, 1fr); background: #f5f8f6; transition: grid-template-columns .2s ease; }
+.app-shell.authenticated-shell.professor-app-shell:has(> .app-sidebar:hover), .app-shell.authenticated-shell.professor-app-shell:has(> .app-sidebar:focus-within) { grid-template-columns: 208px minmax(0, 1fr); }
+.professor-app-shell .app-sidebar { width: 64px; align-items: center; gap: 20px; padding: 15px 8px 12px; border-right: 0; color: #d7dce8; background: #192938; box-shadow: 5px 0 24px rgb(22 33 49 / 8%); transition: width .2s ease, box-shadow .2s ease; }
+.professor-app-shell .sidebar-brand { display: grid; width: 38px; height: 38px; flex: 0 0 auto; justify-content: center; padding: 0; color: #fff; font-family: Manrope, sans-serif; font-size: 15px; font-weight: 800; letter-spacing: -.04em; }
+.professor-app-shell .sidebar-brand .brand-mark { width: 34px; height: 34px; border-radius: 11px; color: #fff; background: linear-gradient(145deg, #39766b, #70a58b); }
+.professor-app-shell .sidebar-brand-label { display: none; }
+.professor-app-shell .sidebar-nav { align-items: center; gap: 7px; }
+.professor-app-shell .sidebar-link { display: grid; width: 40px; height: 40px; justify-content: center; gap: 0; padding: 0; border-radius: 9px; color: #aeb9c8; font-size: 10px; font-weight: 600; transition: background .16s ease, color .16s ease, transform .16s ease; }
+.professor-app-shell .sidebar-link:hover { color: #fff; background: rgb(255 255 255 / 8%); transform: translateX(2px); }
+.professor-app-shell .sidebar-link.active { color: #fff; background: linear-gradient(105deg, #39766b, #5f987d); box-shadow: 0 6px 16px rgb(57 118 107 / 24%); }
+.professor-app-shell .sidebar-link.active::before { display: none; }
+.professor-app-shell .sidebar-tooltip { position: absolute; width: max-content; max-width: 190px; padding: 7px 9px; border-radius: 6px; color: #fff; background: #263b32; box-shadow: 0 5px 16px rgb(24 43 58 / 15%); font-size: 10px; font-weight: 600; opacity: 0; pointer-events: none; transform: translate(-3px, -50%); transition: opacity .13s ease, transform .13s ease; }
+.professor-app-shell .app-sidebar:hover, .professor-app-shell .app-sidebar:focus-within { width: 208px; align-items: stretch; padding-right: 14px; padding-left: 14px; box-shadow: 12px 0 28px rgb(24 43 58 / 18%); }
+.professor-app-shell .app-sidebar:hover .sidebar-brand, .professor-app-shell .app-sidebar:focus-within .sidebar-brand { display: flex; width: 100%; height: auto; justify-content: flex-start; gap: 10px; padding: 3px 8px; }
+.professor-app-shell .app-sidebar:hover .sidebar-brand .brand-mark, .professor-app-shell .app-sidebar:focus-within .sidebar-brand .brand-mark { width: 34px; height: 34px; }
+.professor-app-shell .app-sidebar:hover .sidebar-brand-label, .professor-app-shell .app-sidebar:focus-within .sidebar-brand-label { display: inline; }
+.professor-app-shell .app-sidebar:hover .sidebar-nav, .professor-app-shell .app-sidebar:focus-within .sidebar-nav { align-items: stretch; }
+.professor-app-shell .app-sidebar:hover .sidebar-link, .professor-app-shell .app-sidebar:focus-within .sidebar-link { display: flex; width: 100%; height: 42px; justify-content: flex-start; gap: 11px; padding: 0 11px; font-size: 10px; }
+.professor-app-shell .app-sidebar:hover .sidebar-link.active, .professor-app-shell .app-sidebar:focus-within .sidebar-link.active { color: #fff; background: linear-gradient(105deg, #39766b, #5f987d); }
+.professor-app-shell .app-sidebar:hover .sidebar-tooltip, .professor-app-shell .app-sidebar:focus-within .sidebar-tooltip { position: static; width: auto; max-width: none; padding: 0; border-radius: 0; color: inherit; background: transparent; box-shadow: none; font-size: inherit; font-weight: inherit; opacity: 1; pointer-events: auto; transform: none; transition: none; }
+.professor-app-shell .app-sidebar:hover .sidebar-link:hover, .professor-app-shell .app-sidebar:focus-within .sidebar-link:hover { color: #fff; background: rgb(255 255 255 / 8%); }
+.professor-app-shell .app-sidebar:hover .sidebar-link.active:hover, .professor-app-shell .app-sidebar:focus-within .sidebar-link.active:hover { color: #fff; background: #4a8874; }
+.professor-app-shell .sidebar-logout { margin-top: auto; color: #e48d98; }
+.professor-app-shell .sidebar-logout:hover { color: #ffb1b5; background: rgb(237 102 121 / 10%); }
+.professor-app-shell .site-header { grid-column: 2; padding: 0 clamp(18px, 3vw, 42px); background: #fff; }
+.professor-app-shell .app-main-column { grid-column: 2; }
+
+.professor-dashboard-home { width: min(calc(100% - 56px), 1540px); padding: 24px 0 54px; }
+.professor-dashboard-home .professor-welcome { position: relative; min-height: 126px; padding: 7px 4px; border: 0; border-radius: 0; background: transparent; }
+.professor-dashboard-home .professor-welcome-copy { position: relative; z-index: 1; }
+.professor-dashboard-home .professor-eyebrow { color: #528072; font-size: 9px; }
+.professor-dashboard-home .professor-live-dot { background: #6a9c7d; }
+.professor-dashboard-home .professor-welcome h1 { margin: 8px 0 5px; color: #1c2736; font-size: clamp(25px, 3vw, 32px); }
+.professor-dashboard-home .professor-welcome p { color: #8992a2; font-size: 11px; }
+.professor-dashboard-home .professor-welcome-icon { width: 64px; height: 64px; border-color: #dcebe2; border-radius: 18px; color: #39766b; background: linear-gradient(145deg, #eaf4ef, #fff); transform: rotate(0); }
+.professor-greeting-spark { color: #6a9c7d; font-size: .75em; vertical-align: 10%; }
+.professor-quick-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; margin: 2px 0 15px; }
+.professor-quick-actions > a { display: flex; min-width: 0; min-height: 62px; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e0ece5; border-radius: 11px; color: #39766b; background: linear-gradient(110deg, #edf6f1, #fbfdfb); text-decoration: none; transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease; }
+.professor-quick-actions > a:hover { transform: translateY(-2px); border-color: #c6ddce; box-shadow: 0 7px 16px rgb(57 118 107 / 8%); }
+.professor-quick-actions > a > svg:first-child { flex: 0 0 auto; }
+.professor-quick-actions > a > svg:last-child { flex: 0 0 auto; margin-left: auto; color: #8eafa0; }
+.professor-quick-actions > a > span { display: grid; min-width: 0; gap: 3px; }
+.professor-quick-actions strong { overflow: hidden; color: #303f3c; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.professor-quick-actions small { overflow: hidden; color: #84958d; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.professor-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; margin-top: 0; }
+.professor-dashboard-home .professor-stats { gap: 12px; }
+.professor-dashboard-home .professor-stat { min-height: 102px; }
+.professor-dashboard-home .professor-quick-actions { margin-top: 12px; }
+.professor-dashboard-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, .8fr); align-items: start; gap: 16px; margin-top: 17px; }
+.professor-dashboard-main-column { display: grid; min-width: 0; gap: 17px; }
+.professor-dashboard-rail { position: sticky; top: 18px; min-width: 0; }
+.professor-stat { min-width: 0; min-height: 92px; gap: 11px; padding: 13px; border-color: #eceef3; border-radius: 11px; box-shadow: 0 4px 14px rgb(33 43 63 / 3%); transition: transform .16s ease, box-shadow .16s ease; }
+.professor-stat:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgb(33 43 63 / 7%); }
+.professor-stat-icon { width: 39px; height: 39px; border-radius: 11px; color: #39766b; background: #eaf3ef; }
+.professor-stat-icon.mint { color: #27a8c5; background: #e4f8fc; }
+.professor-stat-icon.blue { color: #299bd0; background: #e4f5ff; }
+.professor-stat-icon.gold { color: #d69a21; background: #fff5df; }
+.professor-stat-icon.coral { color: #e25d65; background: #fff0ef; }
+.professor-stat div { min-width: 0; gap: 3px; }
+.professor-stat small { overflow: hidden; color: #727d8c; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.professor-stat strong { color: #202b39; font-size: 23px; }
+.professor-stat div > span { overflow: hidden; color: #43a27c; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.professor-dashboard-panels { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 0; }
+.professor-dashboard-panel { min-width: 0; padding: 16px; border: 1px solid #eceef3; border-radius: 12px; background: #fff; box-shadow: 0 5px 18px rgb(33 43 63 / 4%); }
+.professor-dashboard-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 12px; }
+.professor-dashboard-panel-heading h2 { margin: 4px 0 0; color: #273344; font-family: Manrope, sans-serif; font-size: 14px; letter-spacing: -.03em; }
+.professor-dashboard-panel-heading p { margin: 3px 0 0; color: #9299a7; font-size: 8px; }
+.professor-dashboard-panel-heading .professor-eyebrow { font-size: 7px; }
+.professor-panel-count { display: grid; min-width: 25px; height: 25px; place-items: center; padding: 0 6px; border-radius: 8px; color: #39766b; background: #eaf3ef; font-size: 9px; font-weight: 800; }
+.professor-panel-heading-icon { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 9px; color: #39766b; background: #eaf3ef; }
+.professor-dashboard-class-list, .professor-upcoming-list { display: grid; }
+.professor-dashboard-class, .professor-upcoming-item { display: flex; min-width: 0; align-items: center; gap: 10px; padding: 10px 2px; border-top: 1px solid #f0f1f5; color: inherit; text-decoration: none; transition: background .15s ease, padding .15s ease; }
+.professor-dashboard-class:hover, .professor-upcoming-item:hover { padding-right: 7px; padding-left: 7px; border-radius: 8px; background: #f2f8f4; }
+.professor-dashboard-class-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 10px; color: #39766b; background: #eaf3ef; }
+.professor-dashboard-class-copy, .professor-upcoming-copy { display: grid; min-width: 0; gap: 4px; }
+.professor-dashboard-class-copy strong, .professor-upcoming-copy strong { overflow: hidden; color: #313c4b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.professor-dashboard-class-copy small, .professor-upcoming-copy small { overflow: hidden; color: #939aa6; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.professor-dashboard-class > svg { flex: 0 0 auto; margin-left: auto; color: #a6a8b7; }
+.professor-upcoming-item { gap: 9px; }
+.professor-upcoming-time { display: grid; width: 48px; min-height: 39px; flex: 0 0 auto; place-items: center; align-content: center; gap: 2px; border-left: 2px solid #6b9b84; border-radius: 5px; color: #39766b; background: #edf5f0; }
+.professor-upcoming-time strong { font-size: 8px; }
+.professor-upcoming-time small { color: #829e90; font-size: 7px; }
+.professor-upcoming-copy { flex: 1; }
+.professor-upcoming-when { flex: 0 0 auto; padding: 5px 7px; border-radius: 6px; color: #39766b; background: #edf5f0; font-size: 7px; }
+.professor-panel-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 7px; color: #39766b; font-size: 8px; font-weight: 750; text-decoration: none; }
+.professor-panel-link:hover { color: #285d53; }
+.professor-panel-empty { display: grid; min-height: 120px; justify-items: center; align-content: center; gap: 7px; color: #9a9eaa; font-size: 8px; text-align: center; }
+.professor-panel-empty svg { color: #827ce2; }
+.professor-panel-empty strong { color: #424c5b; font-size: 9px; }
+.professor-panel-empty span { max-width: 250px; line-height: 1.5; }
+.professor-activity-panel { margin-top: 0; }
+.professor-activity-list { display: grid; }
+.professor-activity-item { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 8px 10px; min-width: 0; padding: 12px 2px; border-top: 1px solid #f0f1f5; color: inherit; text-decoration: none; transition: background .15s ease, padding .15s ease; }
+.professor-activity-item:hover, .professor-activity-item:focus-visible { padding-right: 7px; padding-left: 7px; border-radius: 8px; background: #f2f8f4; outline: none; }
+.professor-activity-avatar { display: grid; width: 34px; height: 34px; overflow: hidden; place-items: center; border-radius: 50%; color: #39766b; background: #eaf3ef; font-size: 12px; font-weight: 750; }
+.professor-activity-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.professor-activity-copy { display: grid; min-width: 0; grid-column: 2; gap: 4px; }
+.professor-activity-copy strong { overflow: hidden; color: #313c4b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.professor-activity-copy strong span { color: #687581; font-weight: 500; }
+.professor-activity-copy small { overflow: hidden; color: #939aa6; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.professor-activity-status { display: inline-flex; align-items: center; gap: 4px; color: #32835f; font-size: 8px; font-weight: 700; white-space: nowrap; }
+.professor-activity-status { grid-column: 2; grid-row: 2; }
+.professor-activity-status.late, .professor-activity-status.timed_out, .professor-activity-status.pending { color: #b27824; }
+.professor-activity-status.reviewed { color: #39766b; }
+.professor-activity-time { grid-column: 3; grid-row: 2; color: #9299a7; font-size: 8px; white-space: nowrap; }
+.professor-activity-arrow { grid-column: 3; grid-row: 1; color: #a6a8b7; }
+.professor-dashboard-home .professor-section { margin-top: 0; }
+.professor-dashboard-home .professor-section-heading h2 { color: #273344; font-size: 17px; }
+.professor-schedule-days { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.professor-schedule-day { display: grid; min-width: 0; min-height: 83px; justify-items: center; align-content: center; gap: 5px; padding: 9px 5px; border: 1px solid #e8edf0; border-radius: 10px; color: #77808c; background: #fff; font: inherit; cursor: pointer; transition: transform .16s ease, border-color .16s ease, color .16s ease, background .16s ease, box-shadow .16s ease; }
+.professor-schedule-day:hover { transform: translateY(-2px); border-color: #b7d4c0; box-shadow: 0 5px 13px rgb(34 80 54 / 7%); }
+.professor-schedule-day:focus-visible { outline: 2px solid #6d9f90; outline-offset: 2px; }
+.professor-schedule-day > span { font-size: 9px; font-weight: 700; }
+.professor-schedule-day > strong { color: #243746; font-family: Manrope, sans-serif; font-size: 20px; line-height: 1; }
+.professor-schedule-day > small { color: #909aa5; font-size: 7px; }
+.professor-schedule-day.today:not(.active) { border-color: #b7d4c0; background: #f4faf6; }
+.professor-schedule-day.active { border-color: #39766b; color: #fff; background: #39766b; box-shadow: 0 5px 14px rgb(57 118 107 / 18%); }
+.professor-schedule-day.active > strong, .professor-schedule-day.active > small { color: #fff; }
+.professor-selected-day-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 17px 0 9px; }
+.professor-selected-day-heading > div { display: flex; align-items: center; gap: 7px; color: #548879; }
+.professor-selected-day-heading h3 { margin: 0; color: #273344; font-family: Manrope, sans-serif; font-size: 12px; }
+.professor-selected-day-heading > span { color: #89939d; font-size: 8px; }
+.professor-selected-day-list { display: grid; gap: 7px; }
+.professor-selected-meeting { display: grid; grid-template-columns: 105px minmax(0, 1fr) minmax(70px, auto) 16px; align-items: center; gap: 12px; min-height: 61px; padding: 10px 12px; border: 1px solid #e8edf0; border-radius: 9px; color: inherit; background: #fff; text-decoration: none; transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.professor-selected-meeting:hover, .professor-selected-meeting:focus-visible { transform: translateY(-1px); border-color: #bfd8ce; box-shadow: 0 5px 14px rgb(24 43 58 / 5%); outline: none; }
+.professor-selected-meeting-time, .professor-selected-meeting-copy { display: grid; min-width: 0; gap: 3px; }
+.professor-selected-meeting-time { grid-template-columns: 15px 1fr; align-items: center; color: #39766b; }
+.professor-selected-meeting-time svg { grid-row: span 2; }
+.professor-selected-meeting-time strong { font-size: 9px; }
+.professor-selected-meeting-time small { color: #9299a7; font-size: 8px; }
+.professor-selected-meeting-copy strong { overflow: hidden; color: #313c4b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.professor-selected-meeting-copy small { overflow: hidden; color: #939aa6; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.professor-selected-meeting-room { display: flex; align-items: center; gap: 4px; color: #78868f; font-size: 8px; white-space: nowrap; }
+.professor-selected-meeting-room svg, .professor-selected-meeting > svg { color: #8a9b91; }
+.professor-schedule-day-empty { display: flex; min-height: 74px; align-items: center; justify-content: center; gap: 8px; border: 1px dashed #dce6e1; border-radius: 9px; color: #849197; background: #fbfdfb; font-size: 9px; }
+.professor-schedule-day-empty svg { color: #75a292; }
+.professor-dashboard-home .professor-all-classes { margin-top: 0; }
+.professor-dashboard-home .professor-class-card { border-color: #eceef3; box-shadow: 0 4px 14px rgb(33 43 63 / 3%); }
+
+@media (max-width: 1050px) {
+  .professor-dashboard-layout { grid-template-columns: minmax(0, 1.45fr) minmax(270px, .8fr); gap: 12px; }
+  .professor-dashboard-panels { grid-template-columns: 1fr; }
+  .professor-dashboard-home .professor-class-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .professor-dashboard-home { width: calc(100% - 34px); padding-top: 20px; }
+  .professor-quick-actions { grid-template-columns: 1fr; gap: 7px; }
+  .professor-quick-actions > a { min-height: 54px; }
+  .professor-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .professor-dashboard-layout { grid-template-columns: 1fr; }
+  .professor-dashboard-rail { position: static; }
+  .professor-dashboard-panels { grid-template-columns: 1fr; }
+  .professor-activity-item { grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px 10px; }
+  .professor-activity-copy { grid-column: 2; }
+  .professor-activity-time { grid-column: 3; grid-row: 2; }
+  .professor-activity-status { grid-column: 2; grid-row: 2; }
+  .professor-activity-arrow { display: none; }
+  .professor-schedule-days { gap: 5px; }
+  .professor-schedule-day { min-height: 74px; }
+  .professor-selected-meeting { grid-template-columns: 88px minmax(0, 1fr) 16px; gap: 8px; }
+  .professor-selected-meeting-room { display: none; }
+}
+
+@media (max-width: 520px) {
+  .professor-dashboard-home .professor-welcome { min-height: 112px; }
+  .professor-dashboard-home .professor-welcome-icon { width: 48px; height: 48px; }
+  .professor-dashboard-home .professor-welcome-icon svg { width: 25px; }
+  .professor-dashboard-home .professor-welcome h1 { font-size: 24px; }
+  .professor-stat { min-height: 86px; gap: 8px; padding: 10px; }
+  .professor-stat-icon { width: 33px; height: 33px; }
+  .professor-stat strong { font-size: 20px; }
+  .professor-upcoming-when { max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .professor-schedule-days { gap: 4px; }
+  .professor-schedule-day { min-height: 68px; gap: 4px; padding: 7px 2px; }
+  .professor-schedule-day > strong { font-size: 17px; }
+  .professor-schedule-day > span { font-size: 8px; }
+  .professor-schedule-day > small { font-size: 6px; }
+  .professor-selected-meeting { grid-template-columns: 78px minmax(0, 1fr) 14px; gap: 7px; padding: 9px; }
+  .professor-class-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .app-shell.authenticated-shell.professor-app-shell { grid-template-columns: 54px minmax(0, 1fr); }
+  .app-shell.authenticated-shell.professor-app-shell:has(> .app-sidebar:hover), .app-shell.authenticated-shell.professor-app-shell:has(> .app-sidebar:focus-within) { grid-template-columns: min(220px, calc(100vw - 54px)) minmax(0, 1fr); }
+  .professor-app-shell .app-sidebar { width: 54px; gap: 15px; padding: 12px 5px 10px; }
+  .professor-app-shell .sidebar-brand, .professor-app-shell .sidebar-link { width: 36px; height: 36px; }
+  .professor-app-shell .app-sidebar:hover, .professor-app-shell .app-sidebar:focus-within { width: min(220px, calc(100vw - 54px)); }
+}
+
+.professor-dashboard.professor-dashboard-home .professor-stats > .professor-student-stat { z-index: 20; overflow: visible; }
+.professor-dashboard.professor-dashboard-home .professor-student-stat .professor-student-class-preview { z-index: 21; }
+
+.professor-create-class-page { max-width: 1040px; }
+.professor-create-back { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 20px; color: #39766b; font-size: 11px; font-weight: 700; text-decoration: none; }
+.professor-create-back:hover { color: #285d53; }
+.professor-create-heading { margin-bottom: 20px; }
+.professor-create-heading h1 { margin: 7px 0 5px; color: #1c2736; font-family: Manrope, sans-serif; font-size: clamp(26px, 3vw, 33px); letter-spacing: -.045em; }
+.professor-create-heading p { margin: 0; color: #8992a2; font-size: 11px; line-height: 1.6; }
+.professor-create-form { padding: 22px; border: 1px solid #e6ecee; border-radius: 12px; background: #fff; box-shadow: 0 5px 18px rgb(33 43 63 / 4%); }
+.professor-create-form-heading { display: flex; align-items: center; gap: 11px; padding-bottom: 16px; border-bottom: 1px solid #edf0f2; }
+.professor-create-form-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 11px; color: #39766b; background: #eaf3ef; }
+.professor-create-form-heading h2 { margin: 0; color: #273344; font-family: Manrope, sans-serif; font-size: 14px; }
+.professor-create-form-heading p { margin: 4px 0 0; color: #9299a7; font-size: 9px; }
+.professor-create-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; padding: 19px 0; }
+.professor-create-fields > label, .professor-create-meeting > label { display: grid; min-width: 0; gap: 6px; color: #40535d; font-size: 10px; font-weight: 700; }
+.professor-create-fields label > span, .professor-create-meeting label > span { color: #40535d; }
+.professor-create-fields b, .professor-create-schedule b { color: #c65e5e; }
+.professor-create-fields input, .professor-create-fields select, .professor-create-meeting input, .professor-create-meeting select { width: 100%; min-width: 0; min-height: 40px; padding: 0 10px; border: 1px solid #dce4e7; border-radius: 7px; outline: none; color: #263b49; background: #fff; font: inherit; font-size: 10px; }
+.professor-create-fields input:focus, .professor-create-fields select:focus, .professor-create-meeting input:focus, .professor-create-meeting select:focus { border-color: #6d9f90; box-shadow: 0 0 0 3px rgb(68 130 109 / 12%); }
+.professor-create-fields select:disabled { color: #9aa5a8; background: #f7f9f8; }
+.professor-create-field-note { color: #9a7950; font-size: 8px; font-weight: 500; }
+.professor-create-subject-field { display: grid; min-width: 0; align-content: start; gap: 6px; }
+.professor-create-existing-subject { display: grid; justify-items: start; gap: 6px; }
+.professor-create-existing-subject-toggle { padding: 0; border: 0; color: #39766b; background: transparent; font: inherit; font-size: 9px; font-weight: 700; text-align: left; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.professor-create-existing-subject-toggle:hover { color: #285d53; }
+.professor-create-existing-subject-preview { display: grid; width: 100%; gap: 5px; padding: 10px 12px; border: 1px solid #cfe2d7; border-radius: 8px; color: #647a6d; background: #f7fbf8; font-size: 9px; line-height: 1.45; }
+.professor-create-existing-subject-preview strong { color: #316b54; font-size: 10px; }
+.professor-create-schedule { min-width: 0; padding: 16px; margin: 0; border: 1px solid #e6ecee; border-radius: 9px; }
+.professor-create-schedule legend { padding: 0 6px; color: #40535d; font-size: 10px; font-weight: 700; }
+.professor-create-schedule > p { margin: 0 0 13px; color: #9299a7; font-size: 9px; }
+.professor-create-meeting { display: grid; grid-template-columns: 1.2fr .85fr .85fr 1fr 34px; align-items: end; gap: 9px; padding: 10px 0; border-top: 1px solid #f0f1f5; }
+.professor-create-meeting > select { align-self: end; }
+.professor-create-time-field { display: grid; min-width: 0; gap: 6px; color: #40535d; font-size: 10px; font-weight: 700; }
+.professor-create-time-input { display: grid; min-width: 0; min-height: 40px; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 2px; padding: 0 5px; border: 1px solid #dce4e7; border-radius: 7px; background: #fff; }
+.professor-create-time-input:focus-within { border-color: #6d9f90; box-shadow: 0 0 0 3px rgb(68 130 109 / 12%); }
+.professor-create-time-input select { min-width: 0; height: 32px; padding: 0 2px; border: 0; outline: 0; color: #263b49; background: transparent; font: inherit; font-size: 10px; }
+.professor-create-time-input select:last-child { font-weight: 700; }
+.professor-create-busy-times, .professor-create-conflicts { grid-column: 1 / -1; display: grid; gap: 4px; padding: 8px 10px; border-radius: 6px; font-size: 9px; line-height: 1.45; }
+.professor-create-busy-times { border: 1px solid #e8edf0; color: #78868d; background: #f8fafb; }
+.professor-create-busy-times strong { color: #50636a; }
+.professor-create-conflicts { border: 1px solid #f0caca; color: #a53d3d; background: #fff3f2; font-weight: 700; }
+.professor-create-remove { display: grid; width: 34px; height: 40px; place-items: center; border: 1px solid #f0d4d4; border-radius: 7px; color: #b35353; background: #fffafa; cursor: pointer; }
+.professor-create-remove:disabled { cursor: not-allowed; opacity: .4; }
+.professor-create-add-meeting { display: inline-flex; min-height: 33px; align-items: center; gap: 6px; padding: 0 9px; margin-top: 9px; border: 1px solid #dce9df; border-radius: 7px; color: #39766b; background: #f8fbf8; font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; }
+.professor-create-add-meeting:hover { background: #edf6f1; }
+.professor-create-code-note { margin: 14px 0 0; color: #89949a; font-size: 9px; }
+.professor-create-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 15px; margin-top: 14px; border-top: 1px solid #edf0f2; }
+.professor-create-actions button, .professor-create-success button { display: inline-flex; min-height: 38px; align-items: center; justify-content: center; gap: 7px; padding: 0 13px; border: 1px solid #dce4e7; border-radius: 7px; color: #64737d; background: #fff; font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.professor-create-actions .professor-create-submit { border-color: #39766b; color: #fff; background: #39766b; }
+.professor-create-actions .professor-create-submit:hover:not(:disabled) { background: #2d655b; }
+.professor-create-actions .professor-create-submit:disabled { cursor: wait; opacity: .6; }
+.professor-create-loading { padding: 30px 0; color: #879499; font-size: 10px; text-align: center; }
+.professor-create-success-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(25 39 36 / 40%); backdrop-filter: blur(3px); }
+.professor-create-success-dialog { display: grid; width: min(420px, 100%); justify-items: center; padding: 28px 25px 24px; border: 1px solid #dcebe1; border-radius: 15px; background: #fff; box-shadow: 0 22px 65px rgb(21 42 34 / 24%); text-align: center; animation: professor-create-success-enter .18s ease-out; }
+.professor-create-success-icon { display: grid; width: 58px; height: 58px; place-items: center; margin-bottom: 13px; border-radius: 50%; color: #3d806b; background: #e9f5ed; }
+.professor-create-success-dialog h2 { margin: 0; color: #263d34; font-family: Manrope, sans-serif; font-size: 19px; }
+.professor-create-success-dialog > p { margin: 8px 0 16px; color: #74857d; font-size: 11px; line-height: 1.6; }
+.professor-create-success-code-label { margin-bottom: 6px; color: #7d8c84; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.professor-create-success-dialog code { padding: 10px 15px; border: 1px dashed #9dc5ac; border-radius: 7px; color: #28654f; background: #f7fbf8; font-size: 17px; font-weight: 800; letter-spacing: .1em; }
+.professor-create-success-dialog .professor-create-success-hint { margin: 9px 0 18px; font-size: 9px; }
+.professor-create-success-dialog button { min-height: 40px; padding: 0 17px; border: 1px solid #39766b; border-radius: 7px; color: #fff; background: #39766b; font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.professor-create-success-dialog button:hover { background: #2d655b; }
+@keyframes professor-create-success-enter { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+@media (max-width: 600px) {
+  .professor-create-fields { grid-template-columns: 1fr; gap: 12px; }
+  .professor-create-meeting { grid-template-columns: 1fr 1fr 1fr 34px; }
+  .professor-create-meeting > select { grid-column: 1 / -1; }
+  .professor-create-meeting > input { grid-column: 1 / 4; }
+  .professor-create-remove { grid-column: 4; }
+  .professor-create-success-dialog { padding: 24px 18px 20px; }
 }

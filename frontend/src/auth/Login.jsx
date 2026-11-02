@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, BookOpen, CalendarDays, MessageSquareText, Sparkles } from 'lucide-react'
+import { ArrowRight, BookOpen, CalendarDays, Eye, EyeOff, LockKeyhole, MessageSquareText, Sparkles, UserRound } from 'lucide-react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import './auth.css'
@@ -13,6 +13,7 @@ export default function Login() {
   const navigate = useNavigate()
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -56,8 +57,29 @@ export default function Login() {
             <h1>Sign in to your space</h1>
             <p className="auth-card-intro">Pick up right where your class left off.</p>
             {error && <p className="auth-error" role="alert">{error}</p>}
-            <div className="auth-field"><label htmlFor="login-identifier">Username or email</label><input id="login-identifier" type="text" autoComplete="username" placeholder="Your username or email" required value={identifier} onChange={(event) => setIdentifier(event.target.value)} /></div>
-            <div className="auth-field"><label htmlFor="login-password">Password</label><input id="login-password" type="password" autoComplete="current-password" placeholder="Enter your password" required value={password} onChange={(event) => setPassword(event.target.value)} /></div>
+            <div className="auth-field">
+              <label htmlFor="login-identifier">Username or email</label>
+              <div className="auth-input-wrap">
+                <UserRound size={17} aria-hidden="true" />
+                <input id="login-identifier" type="text" autoComplete="username" placeholder="Your username or email" required value={identifier} onChange={(event) => setIdentifier(event.target.value)} />
+              </div>
+            </div>
+            <div className="auth-field">
+              <div className="auth-password-label"><label htmlFor="login-password">Password</label><span><LockKeyhole size={12} /> Secure sign in</span></div>
+              <div className="auth-input-wrap auth-password-wrap">
+                <LockKeyhole size={17} aria-hidden="true" />
+                <input id="login-password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Enter your password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+                <button
+                  className="auth-password-toggle"
+                  type="button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
+            </div>
             <button type="submit" disabled={submitting}>{submitting ? 'Signing in…' : <>Sign in <ArrowRight size={17} /></>}</button>
             <p className="auth-switch">New to The Learniverse? <Link to="/register" viewTransition className="auth-switch-link">Create an account</Link></p>
           </form>

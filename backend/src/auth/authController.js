@@ -2,6 +2,9 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { cloudinary, folder } = require('../../config/cloudinary');
 const { createUniqueUsername } = require('../../utils/usernames');
+const COURSE_PROGRAMS = require('../../utils/coursePrograms');
+const { DEPARTMENTS } = require('../../utils/departments');
+const { departmentForProgram } = require('../../utils/courseDepartments');
 
 function createToken(user) {
   if (!process.env.JWT_SECRET) {
@@ -23,6 +26,9 @@ function userPayload(user) {
     email: user.email,
     role: user.role,
     department: user.department,
+    courseProgram: user.courseProgram,
+    yearLevel: user.yearLevel,
+    section: user.section,
     phone: user.phone,
     birthdate: user.birthdate,
     profileImage: user.profileImage,
@@ -155,6 +161,42 @@ async function updateProfile(req, res, next) {
           return res.status(400).json({ message: 'Enter a valid birthdate that is not in the future.' });
         }
         updates.birthdate = birthdate;
+      }
+    }
+
+    if (req.user.role === 'STUDENT') {
+      if (Object.hasOwn(body, 'department')) {
+        if (typeof body.department !== 'string' || (body.department && !DEPARTMENTS.includes(body.department))) {
+          return res.status(400).json({ message: 'Select a valid department.' });
+        }
+        updates.department = body.department.trim();
+      }
+
+      if (Object.hasOwn(body, 'courseProgram')) {
+        if (typeof body.courseProgram !== 'string' || (body.courseProgram && !COURSE_PROGRAMS.includes(body.courseProgram))) {
+          return res.status(400).json({ message: 'Select a valid course program.' });
+        }
+        updates.courseProgram = body.courseProgram.trim();
+      }
+
+      const selectedDepartment = Object.hasOwn(updates, 'department') ? updates.department : req.user.department;
+      const selectedCourseProgram = Object.hasOwn(updates, 'courseProgram') ? updates.courseProgram : req.user.courseProgram;
+      if (selectedCourseProgram && departmentForProgram(selectedCourseProgram) !== selectedDepartment) {
+        return res.status(400).json({ message: 'The selected course program does not belong to the selected department.' });
+      }
+
+      if (Object.hasOwn(body, 'yearLevel')) {
+        if (typeof body.yearLevel !== 'string' || body.yearLevel.trim().length > 50) {
+          return res.status(400).json({ message: 'Year level must be 50 characters or fewer.' });
+        }
+        updates.yearLevel = body.yearLevel.trim();
+      }
+
+      if (Object.hasOwn(body, 'section')) {
+        if (typeof body.section !== 'string' || body.section.trim().length > 30) {
+          return res.status(400).json({ message: 'Section must be 30 characters or fewer.' });
+        }
+        updates.section = body.section.trim();
       }
     }
 

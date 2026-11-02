@@ -130,7 +130,7 @@ function formatTime(time) {
   const [hours, minutes] = time.split(':').map(Number)
   const date = new Date()
   date.setHours(hours, minutes, 0, 0)
-  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date)
+  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12' }).format(date)
 }
 
 export default function ProfessorClassroom() {

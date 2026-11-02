@@ -1,4 +1,3 @@
-const { randomInt } = require('node:crypto');
 const User = require('../src/models/User');
 const Subject = require('../src/models/Subject');
 const ClassOffering = require('../src/models/ClassOffering');
@@ -9,15 +8,9 @@ const COURSE_PROGRAMS = require('../utils/coursePrograms');
 const { DEPARTMENTS } = require('../utils/departments');
 const { departmentForProgram } = require('../utils/courseDepartments');
 const seedCourseSubjects = require('../utils/seedCourseSubjects');
+const { generateClassCode, normalizeSchedule, validateSchedule } = require('../utils/classOffering');
 
 const professorFields = 'fullName email department phone birthdate profileImage isActive createdAt';
-const classCodeAlphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-function generateClassCode() {
-  const characters = Array.from({ length: 8 }, () => classCodeAlphabet[randomInt(classCodeAlphabet.length)]);
-  return `${characters.slice(0, 4).join('')}-${characters.slice(4).join('')}`;
-}
 
 async function getDashboard(_req, res, next) {
   try {
@@ -414,27 +407,6 @@ async function createClassOffering(req, res, next) {
     }
     return next(error);
   }
-}
-
-function normalizeSchedule(schedule) {
-  if (!Array.isArray(schedule)) return [];
-  return schedule.map((meeting) => ({
-    day: typeof meeting?.day === 'string' ? meeting.day : '',
-    startTime: typeof meeting?.startTime === 'string' ? meeting.startTime : '',
-    endTime: typeof meeting?.endTime === 'string' ? meeting.endTime : '',
-    room: typeof meeting?.room === 'string' ? meeting.room.trim() : '',
-  }));
-}
-
-function validateSchedule(meetings) {
-  if (meetings.length === 0) return 'Add at least one meeting to the class schedule.';
-  for (const meeting of meetings) {
-    if (!weekDays.includes(meeting.day) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(meeting.startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(meeting.endTime)) {
-      return 'Each schedule needs a valid day, start time, and end time.';
-    }
-    if (meeting.startTime >= meeting.endTime) return 'Each meeting end time must be after its start time.';
-  }
-  return '';
 }
 
 async function updateClassOffering(req, res, next) {

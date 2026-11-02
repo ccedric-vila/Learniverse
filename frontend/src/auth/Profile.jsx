@@ -4,7 +4,10 @@ import { Link } from 'react-router-dom'
 import { api, useAuth } from './AuthContext'
 import './profile.css'
 
+const STANDARD_YEAR_LEVELS = ['1st year', '2nd year', '3rd year', '4th year']
+
 function profileFormFromUser(user) {
+  const yearLevel = user?.yearLevel || ''
   return {
     fullName: user?.fullName || '',
     username: user?.username || '',
@@ -12,6 +15,11 @@ function profileFormFromUser(user) {
     phone: user?.phone || '',
     birthdate: user?.birthdate ? new Date(user.birthdate).toISOString().slice(0, 10) : '',
     profileImage: user?.profileImage || '',
+    department: user?.department || '',
+    courseProgram: user?.courseProgram || '',
+    yearLevel: STANDARD_YEAR_LEVELS.includes(yearLevel) ? yearLevel : yearLevel ? 'Other' : '',
+    yearLevelOther: yearLevel && !STANDARD_YEAR_LEVELS.includes(yearLevel) ? yearLevel : '',
+    section: user?.section || '',
   }
 }
 
@@ -26,6 +34,20 @@ export default function Profile() {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const [profileOptions, setProfileOptions] = useState({ departments: [], courseProgramGroups: [] })
+
+  useEffect(() => {
+    if (user?.role !== 'STUDENT') return
+    let active = true
+    api.get('/student/profile-options')
+      .then(({ data }) => {
+        if (active) setProfileOptions(data)
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.response?.data?.message || 'Could not load department and course options.')
+      })
+    return () => { active = false }
+  }, [user?.role])
 
   useEffect(() => {
     const dialog = imagePreviewDialog.current
@@ -40,7 +62,11 @@ export default function Profile() {
 
   function updateField(event) {
     const { name, value } = event.target
-    setForm((current) => ({ ...current, [name]: value }))
+    setForm((current) => ({
+      ...current,
+      [name]: value,
+      ...(name === 'department' ? { courseProgram: '' } : {}),
+    }))
     setError('')
     setNotice('')
   }
@@ -80,7 +106,11 @@ export default function Profile() {
     setNotice('')
     setSaving(true)
     try {
-      await updateProfile(form)
+      const { yearLevelOther, ...profile } = form
+      await updateProfile({
+        ...profile,
+        yearLevel: form.yearLevel === 'Other' ? yearLevelOther.trim() : form.yearLevel,
+      })
       setNotice('Your profile was updated successfully.')
       setIsEditing(false)
     } catch (requestError) {
@@ -116,6 +146,7 @@ export default function Profile() {
             >
               {form.profileImage ? <img src={form.profileImage} alt={`${form.fullName || 'Your'} profile`} /> : <UserRound size={40} />}
             </button>
+            <span className="profile-role-badge">{user?.role === 'PROFESSOR' ? 'Professor account' : 'Student account'}</span>
             {isEditing && <div className="profile-summary-actions">
               <button type="button" className="profile-summary-upload" onClick={() => imageInput.current?.click()} disabled={uploadingImage}>
                 <ImagePlus size={14} />{uploadingImage ? 'Uploading…' : form.profileImage ? 'Change photo' : 'Upload photo'}
@@ -130,6 +161,12 @@ export default function Profile() {
               <div><dt>Email</dt><dd>{form.email || 'Not provided'}</dd></div>
               <div><dt>Phone number</dt><dd>{form.phone || 'Not provided'}</dd></div>
               <div><dt>Birthdate</dt><dd>{form.birthdate || 'Not provided'}</dd></div>
+              {user?.role === 'STUDENT' && <>
+                <div><dt>Department</dt><dd>{form.department || 'Not provided'}</dd></div>
+                <div><dt>Course</dt><dd>{form.courseProgram || 'Not provided'}</dd></div>
+                <div><dt>Year level</dt><dd>{form.yearLevel === 'Other' ? form.yearLevelOther || 'Other' : form.yearLevel || 'Not provided'}</dd></div>
+                <div><dt>Section</dt><dd>{form.section || 'Not provided'}</dd></div>
+              </>}
               <div><dt>Account type</dt><dd>{user?.role === 'PROFESSOR' ? 'Professor' : 'Student'}</dd></div>
             </dl>
             <button type="button" className="profile-summary-toggle" aria-expanded={isEditing} aria-controls="profile-edit-form" onClick={() => {
@@ -163,6 +200,16 @@ export default function Profile() {
             <label className="profile-field"><span>Email address</span><input name="email" type="email" autoComplete="email" maxLength={254} required value={form.email} onChange={updateField} /></label>
             <label className="profile-field"><span>Phone number <small>Optional</small></span><input name="phone" type="tel" autoComplete="tel" maxLength={30} value={form.phone} onChange={updateField} placeholder="Add a contact number" /></label>
             <label className="profile-field"><span>Birthdate <small>Optional</small></span><input name="birthdate" type="date" max={new Date().toISOString().slice(0, 10)} value={form.birthdate} onChange={updateField} /></label>
+            {user?.role === 'STUDENT' && <>
+              <label className="profile-field"><span>Department</span><select name="department" value={form.department} onChange={updateField}><option value="">Select a department</option>{profileOptions.departments.map((department) => <option key={department} value={department}>{department}</option>)}</select></label>
+              <label className="profile-field"><span>Course program</span><select name="courseProgram" value={form.courseProgram} onChange={updateField} disabled={!form.department}><option value="">Select a course</option>{profileOptions.courseProgramGroups.map((group) => {
+                const programs = group.programs.filter((program) => program.department === form.department)
+                return programs.length ? <optgroup key={group.label} label={group.label}>{programs.map((program) => <option key={program.name} value={program.name}>{program.name}</option>)}</optgroup> : null
+              })}</select></label>
+              <label className="profile-field"><span>Year level</span><select name="yearLevel" value={form.yearLevel} onChange={updateField}><option value="">Select a year level</option>{STANDARD_YEAR_LEVELS.map((yearLevel) => <option key={yearLevel} value={yearLevel}>{yearLevel}</option>)}<option value="Other">Other</option></select></label>
+              {form.yearLevel === 'Other' && <label className="profile-field"><span>Specify year level</span><input name="yearLevelOther" maxLength={50} required value={form.yearLevelOther} onChange={updateField} placeholder="Enter your year level" /></label>}
+              <label className="profile-field"><span>Section</span><input name="section" maxLength={30} value={form.section} onChange={updateField} placeholder="Enter your section" /></label>
+            </>}
           </div>
           {user?.role === 'PROFESSOR' && user.department && <p className="profile-managed-note">Department: <strong>{user.department}</strong> · Managed by your administrator</p>}
           <div className="profile-form-footer"><button type="button" className="profile-cancel-button" onClick={cancelEditing} disabled={saving}>Cancel</button><button type="submit" disabled={saving}><Save size={16} />{saving ? 'Saving…' : 'Save changes'}</button></div>

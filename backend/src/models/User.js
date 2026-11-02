@@ -44,6 +44,21 @@ const userSchema = new mongoose.Schema({
     enum: ALL_DEPARTMENTS,
     trim: true,
   },
+  courseProgram: {
+    type: String,
+    trim: true,
+    maxlength: 150,
+  },
+  yearLevel: {
+    type: String,
+    trim: true,
+    maxlength: 50,
+  },
+  section: {
+    type: String,
+    trim: true,
+    maxlength: 30,
+  },
   phone: {
     type: String,
     trim: true,

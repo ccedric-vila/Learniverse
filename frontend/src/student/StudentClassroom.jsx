@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, BookOpen, CalendarDays, Clock3, Download, FileText, FolderOpen, MapPin, MessageSquareText } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, Download, FileText, FolderOpen, MapPin } from 'lucide-react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { api } from '../auth/AuthContext'
 import StudentQuizSection from './StudentQuizSection'
@@ -13,12 +13,37 @@ function formatTime(time) {
   return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date)
 }
 
+function formatDeadline(deadline) {
+  if (!deadline) return 'No deadline set'
+  const date = new Date(deadline)
+  if (!Number.isFinite(date.getTime())) return 'Deadline unavailable'
+  const dateLabel = getDeadlineDateLabel(date)
+  const timeLabel = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date)
+  return `Due ${dateLabel} · ${timeLabel}`
+}
+
+function getDeadlineDateLabel(date) {
+  const today = new Date()
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+  const deadlineDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  if (deadlineDay.getTime() === new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()) return 'today'
+  if (deadlineDay.getTime() === tomorrow.getTime()) return 'tomorrow'
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date)
+}
+
+function getUpcomingDeadline(tasks) {
+  return tasks
+    .filter((task) => !task.completed && !task.overdue && task.deadline && Number.isFinite(new Date(task.deadline).getTime()))
+    .sort((first, second) => new Date(first.deadline) - new Date(second.deadline))[0] || null
+}
+
 export default function StudentClassroom() {
   const { classId } = useParams()
   const location = useLocation()
   const [request, setRequest] = useState({ classId: null, offering: null, error: '' })
   const [activeTab, setActiveTab] = useState('stream')
   const [materialsState, setMaterialsState] = useState({ classId: null, materials: [], error: '' })
+  const [tasksState, setTasksState] = useState({ classId: null, tasks: [], error: '' })
   const [downloadingId, setDownloadingId] = useState('')
 
   useEffect(() => {
@@ -41,12 +66,36 @@ export default function StudentClassroom() {
     return () => { active = false }
   }, [classId])
 
+  useEffect(() => {
+    if (activeTab !== 'stream') return undefined
+    let active = true
+    api.get(`/student/classes/${classId}/tasks`)
+      .then(({ data }) => {
+        if (active) setTasksState({ classId, tasks: data.tasks || [], error: '' })
+      })
+      .catch((tasksRequestError) => {
+        if (active) setTasksState({
+          classId,
+          tasks: [],
+          error: tasksRequestError.response?.data?.message || 'Could not load this class task list.',
+        })
+      })
+    return () => { active = false }
+  }, [classId, activeTab])
+
   const loading = request.classId !== classId
   const offering = loading ? null : request.offering
   const error = loading ? '' : request.error
   const materials = materialsState.classId === classId ? materialsState.materials : []
   const materialsError = materialsState.classId === classId ? materialsState.error : ''
   const materialsLoading = materialsState.classId !== classId
+  const tasks = tasksState.classId === classId ? tasksState.tasks : []
+  const tasksError = tasksState.classId === classId ? tasksState.error : ''
+  const tasksLoading = tasksState.classId !== classId
+  const upcomingDeadline = getUpcomingDeadline(tasks)
+  const upcomingDeadlineDate = upcomingDeadline ? new Date(upcomingDeadline.deadline) : null
+  const upcomingDeadlineLabel = upcomingDeadlineDate ? getDeadlineDateLabel(upcomingDeadlineDate) : ''
+  const isDeadlineSoon = upcomingDeadlineLabel === 'today' || upcomingDeadlineLabel === 'tomorrow'
 
   async function downloadMaterial(materialId) {
     setDownloadingId(materialId)
@@ -87,25 +136,76 @@ export default function StudentClassroom() {
         </article>)}</div>}
       </section> : activeTab === 'quizzes' ? <StudentQuizSection classId={classId} /> : activeTab === 'practice' ? <StudentQuizSection classId={classId} practice /> : <>
 
-      <section className="student-classroom-overview">
-        <article><small>Professor</small><strong>{offering.professor?.fullName || 'Professor'}</strong><span>{offering.professor?.department || offering.subject?.department || ''}</span></article>
-        <article><small>Section</small><strong>{offering.section}</strong><span>{offering.subject?.units ?? '—'} subject units</span></article>
-      </section>
+      <section className="student-classroom-content">
+        <div className="student-classroom-main">
+          <article className="student-classroom-intro">
+            <span className="student-classroom-intro-icon"><BookOpen size={20} /></span>
+            <div className="student-classroom-intro-copy">
+              <span className="student-eyebrow">CLASS OVERVIEW</span>
+              <h2>{offering.subject?.name || 'Welcome to your class'}</h2>
+              <p>{offering.subject?.description || 'Your class materials, schedule, and upcoming work are all in one place.'}</p>
+            </div>
+            <button type="button" className="student-open-materials" onClick={() => setActiveTab('materials')}>Browse materials <FolderOpen size={14} /></button>
+          </article>
 
-      <section className="student-section">
-        <div className="student-section-heading"><div><span className="student-eyebrow">WHEN TO MEET</span><h2>Class schedule</h2></div></div>
-        <div className="student-detail-schedule">{offering.schedule?.map((meeting, index) => <article key={`${meeting.day}-${meeting.startTime}-${index}`}><strong><CalendarDays size={15} />{meeting.day}</strong><span><Clock3 size={14} />{formatTime(meeting.startTime)} – {formatTime(meeting.endTime)}</span><span>{meeting.room ? <><MapPin size={14} />{meeting.room}</> : 'Room not set'}</span></article>)}</div>
-      </section>
+          <article className="student-classroom-schedule">
+            <div className="student-classroom-panel-heading">
+              <div><span className="student-classroom-panel-icon"><CalendarDays size={16} /></span><div><span className="student-eyebrow">PLAN YOUR WEEK</span><h2>Class schedule</h2></div></div>
+              <span>{offering.schedule?.length || 0} {(offering.schedule?.length || 0) === 1 ? 'meeting' : 'meetings'}</span>
+            </div>
+            {offering.schedule?.length ? <div className="student-classroom-meetings">{offering.schedule.map((meeting, index) => <article key={`${meeting.day}-${meeting.startTime}-${index}`}>
+              <strong>{meeting.day}</strong>
+              <span><Clock3 size={14} />{formatTime(meeting.startTime)} – {formatTime(meeting.endTime)}</span>
+              <span>{meeting.room ? <><MapPin size={14} />{meeting.room}</> : 'Room not set'}</span>
+            </article>)}</div> : <p className="student-classroom-no-meetings">No class meeting times have been added yet.</p>}
+          </article>
 
-      {offering.subject?.description && <section className="student-description"><span className="student-eyebrow">ABOUT THIS SUBJECT</span><p>{offering.subject.description}</p></section>}
-      <section className="student-stream-layout">
-        <article className="student-stream-main">
-          <div className="student-stream-banner"><span className="student-stream-banner-icon"><BookOpen size={20} /></span><div><span className="student-eyebrow">CLASS INFORMATION</span><h2>{offering.subject?.name || 'Class'}</h2><p>Section {offering.section} · {offering.term}</p></div></div>
-          <div className="student-stream-empty"><span><MessageSquareText size={19} /></span><strong>Welcome to {offering.subject?.name || 'your class'}</strong><p>Class updates and announcements from your professor will appear here.</p><button type="button" className="student-open-materials" onClick={() => setActiveTab('materials')}>Browse class materials <FolderOpen size={14} /></button></div>
-        </article>
+          <article className="student-classroom-professor">
+            <div className="student-classroom-professor-icon"><BookOpen size={16} /></div>
+            <div><span className="student-eyebrow">YOUR PROFESSOR</span><strong>{offering.professor?.fullName || 'Professor'}</strong><p>{offering.professor?.department || offering.subject?.department || 'Course instructor'}</p></div>
+            <div className="student-classroom-units"><span>SECTION</span><strong>{offering.section}</strong><small>{offering.subject?.units ?? '—'} units</small></div>
+          </article>
+        </div>
+
         <aside className="student-stream-sidebar">
-          <article className="student-stream-sidecard"><span className="student-eyebrow">PROFESSOR</span><strong>{offering.professor?.fullName || 'Professor'}</strong><p>{offering.professor?.department || offering.subject?.department || ''}</p></article>
-          <article className="student-stream-sidecard"><span className="student-eyebrow">CLASS SCHEDULE</span>{offering.schedule?.length ? offering.schedule.map((meeting, index) => <div className="student-upcoming-meeting" key={`${meeting.day}-${meeting.startTime}-${index}`}><CalendarDays size={14} /><span><strong>{meeting.day}</strong><small>{formatTime(meeting.startTime)} – {formatTime(meeting.endTime)}{meeting.room ? ` · ${meeting.room}` : ''}</small></span></div>) : <p>No meeting times listed.</p>}</article>
+          <article className="student-stream-sidecard student-class-task-card" aria-labelledby="student-class-task-heading">
+            <div className="student-class-task-heading">
+              <div><span className="student-eyebrow">ASSIGNMENTS & QUIZZES</span><h2 id="student-class-task-heading">Task list</h2></div>
+              <span className="student-class-task-count">{tasksLoading || tasksError ? '—' : tasks.filter((task) => !task.completed).length}</span>
+            </div>
+            {!tasksLoading && !tasksError && upcomingDeadline && <div className="student-class-task-reminder" role="note">
+              <CalendarDays size={15} />
+              <span><small>REMINDER</small><strong>{isDeadlineSoon ? `Due ${upcomingDeadlineLabel}` : upcomingDeadlineLabel}</strong><span>{upcomingDeadline.title} · {new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(upcomingDeadlineDate)}</span></span>
+            </div>}
+            {tasksError && <p className="student-class-task-error" role="alert">{tasksError}</p>}
+            {tasksLoading ? <p className="student-class-task-empty">Loading class tasks…</p> : tasksError ? null : <>
+              <div className="student-class-task-section">
+                <h3>To accomplish <span>{tasks.filter((task) => !task.completed).length}</span></h3>
+                {tasks.filter((task) => !task.completed).length ? <div className="student-class-task-list">{tasks.filter((task) => !task.completed).map((task) => {
+                  const content = <>
+                    <span className="student-class-task-checkbox" role="img" aria-label={`Not completed: ${task.title}`} />
+                    <span className="student-class-task-copy"><strong>{task.title}</strong><small>{formatDeadline(task.deadline)}</small></span>
+                    {task.overdue ? <span className="student-class-task-overdue">Overdue</span> : <ArrowRight className="student-class-task-open-icon" size={13} />}
+                  </>
+                  return task.type === 'quiz'
+                    ? <button className={`student-class-task-item${task.overdue ? ' overdue' : ''}`} type="button" onClick={() => setActiveTab('quizzes')} key={`${task.type}-${task.id}`}>{content}</button>
+                    : <Link className={`student-class-task-item${task.overdue ? ' overdue' : ''}`} to={`/student/classes/${classId}/materials/${task.id}`} key={`${task.type}-${task.id}`}>{content}</Link>
+                })}</div> : <p className="student-class-task-empty"><CheckCircle2 size={15} />You’re all caught up in this class.</p>}
+              </div>
+              <div className="student-class-task-section completed">
+                <h3>Completed <span>{tasks.filter((task) => task.completed).length}</span></h3>
+                {tasks.filter((task) => task.completed).length ? <div className="student-class-task-list">{tasks.filter((task) => task.completed).map((task) => {
+                  const content = <>
+                    <span className="student-class-task-checkbox checked" role="img" aria-label={`Completed: ${task.title}`} />
+                    <span className="student-class-task-copy"><strong>{task.title}</strong><small>{task.type === 'quiz' ? 'Quiz submitted' : 'Work submitted'} · {formatDeadline(task.deadline)}</small></span>
+                  </>
+                  return task.type === 'quiz'
+                    ? <button className="student-class-task-item done" type="button" onClick={() => setActiveTab('quizzes')} key={`${task.type}-${task.id}`}>{content}</button>
+                    : <Link className="student-class-task-item done" to={`/student/classes/${classId}/materials/${task.id}`} key={`${task.type}-${task.id}`}>{content}</Link>
+                })}</div> : <p className="student-class-task-empty">Submitted work will appear here.</p>}
+              </div>
+            </>}
+          </article>
         </aside>
       </section>
       </>}

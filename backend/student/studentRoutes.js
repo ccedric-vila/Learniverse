@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const { authorize, protect } = require('../src/auth/authMiddleware');
-const { getClassDetails, getDashboard, joinClass } = require('./studentController');
+const { getClassDetails, getClassTasks, getDashboard, getProfileOptions, joinClass } = require('./studentController');
 const {
   getAttempt,
   getStudentPracticeMaterials,
@@ -41,7 +41,9 @@ const uploadStudentSubmission = multer({
 
 router.use(protect, authorize('STUDENT'));
 router.get('/dashboard', getDashboard);
+router.get('/profile-options', getProfileOptions);
 router.post('/classes/join', joinClass);
+router.get('/classes/:classId/tasks', getClassTasks);
 router.get('/classes/:classId/quizzes', getStudentQuizzes);
 router.get('/classes/:classId/practice-materials', getStudentPracticeMaterials);
 router.post('/quizzes/:quizId/attempts', startQuizAttempt);
