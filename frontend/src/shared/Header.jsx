@@ -1,12 +1,14 @@
 import {
   ArrowUpRight,
   BookOpen,
+  Moon,
+  Sun,
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import NotificationBell from './NotificationBell'
 
-export default function Header() {
+export default function Header({ professorTheme, onToggleProfessorTheme, studentTheme, onToggleStudentTheme, adminTheme, onToggleAdminTheme }) {
   const { user } = useAuth()
   const location = useLocation()
   const rolePath = { ADMIN: '/admin', PROFESSOR: '/professor', STUDENT: '/student' }[user?.role]
@@ -22,6 +24,42 @@ export default function Header() {
               </Link>
               <div className="site-header-actions">
                 <NotificationBell />
+                {user.role === 'PROFESSOR' && (
+                  <button
+                    className="professor-theme-toggle"
+                    type="button"
+                    aria-label={`Switch to ${professorTheme === 'dark' ? 'light' : 'dark'} theme`}
+                    aria-pressed={professorTheme === 'dark'}
+                    title={`Switch to ${professorTheme === 'dark' ? 'light' : 'dark'} theme`}
+                    onClick={onToggleProfessorTheme}
+                  >
+                    {professorTheme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+                  </button>
+                )}
+                {user.role === 'STUDENT' && (
+                  <button
+                    className="student-theme-toggle"
+                    type="button"
+                    aria-label={`Switch to ${studentTheme === 'dark' ? 'light' : 'dark'} theme`}
+                    aria-pressed={studentTheme === 'dark'}
+                    title={`Switch to ${studentTheme === 'dark' ? 'light' : 'dark'} theme`}
+                    onClick={onToggleStudentTheme}
+                  >
+                    {studentTheme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+                  </button>
+                )}
+                {user.role === 'ADMIN' && (
+                  <button
+                    className="admin-theme-toggle"
+                    type="button"
+                    aria-label={`Switch to ${adminTheme === 'dark' ? 'light' : 'dark'} theme`}
+                    aria-pressed={adminTheme === 'dark'}
+                    title={`Switch to ${adminTheme === 'dark' ? 'light' : 'dark'} theme`}
+                    onClick={onToggleAdminTheme}
+                  >
+                    {adminTheme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+                  </button>
+                )}
                 <span className="user-chip">
                   <span className="avatar">{user.profileImage ? <img src={user.profileImage} alt="" /> : user.fullName?.charAt(0)?.toUpperCase()}</span>
                   <span className="user-chip-name">{user.fullName}</span>

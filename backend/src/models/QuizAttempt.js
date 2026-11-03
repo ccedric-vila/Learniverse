@@ -24,15 +24,23 @@ const quizAttemptSchema = new mongoose.Schema({
   expiresAt: { type: Date, required: true },
   submittedAt: { type: Date, default: null },
   status: { type: String, enum: ['in_progress', 'submitted', 'expired'], default: 'in_progress' },
+  attemptNumber: { type: Number, min: 1 },
   correctCount: { type: Number, default: null, min: 0 },
   scorePercent: { type: Number, default: null, min: 0, max: 100 },
+  originalCorrectCount: { type: Number, default: null, min: 0 },
+  originalScorePercent: { type: Number, default: null, min: 0, max: 100 },
+  latePenaltyApplied: { type: Boolean, default: false },
   passed: { type: Boolean, default: null },
   practiceAttemptNumber: { type: Number, min: 1, max: 3 },
 }, { timestamps: true });
 
 quizAttemptSchema.index(
   { student: 1, quiz: 1 },
-  { unique: true, partialFilterExpression: { attemptType: 'quiz', quiz: { $exists: true } } },
+  {
+    unique: true,
+    partialFilterExpression: { attemptType: 'quiz', status: 'in_progress', quiz: { $exists: true } },
+    name: 'one_active_quiz_attempt_per_student',
+  },
 );
 quizAttemptSchema.index(
   { student: 1, material: 1, practiceAttemptNumber: 1 },
@@ -40,5 +48,6 @@ quizAttemptSchema.index(
 );
 quizAttemptSchema.index({ student: 1, attemptType: 1, createdAt: -1 });
 quizAttemptSchema.index({ quiz: 1, attemptType: 1, status: 1, student: 1 });
+quizAttemptSchema.index({ student: 1, quiz: 1, attemptType: 1, createdAt: -1 });
 
 module.exports = mongoose.models.QuizAttempt || mongoose.model('QuizAttempt', quizAttemptSchema);

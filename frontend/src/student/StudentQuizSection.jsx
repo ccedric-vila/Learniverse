@@ -142,8 +142,8 @@ export default function StudentQuizSection({ classId, practice = false }) {
 
       {activeAttempt ? (
         <div className="quiz-taking">
-          <div className="quiz-taker-heading"><div><span className="student-eyebrow">{practice ? `PRACTICE ATTEMPT ${attempt.practiceAttemptNumber} OF 3` : 'ONE QUIZ ATTEMPT'}</span><h3>{attempt.title}</h3><span>{attempt.totalQuestions} questions · 75% to pass</span></div><div className={`quiz-timer ${secondsRemaining <= 60 ? 'urgent' : ''}`} role="timer"><Clock3 size={17} />{formatRemaining(secondsRemaining)}</div></div>
-          <p className="quiz-rule-note">Your answers save as you go. The attempt submits automatically when the 10-minute timer or quiz deadline is reached.</p>
+          <div className="quiz-taker-heading"><div><span className="student-eyebrow">{practice ? `PRACTICE ATTEMPT ${attempt.practiceAttemptNumber} OF 3` : `ATTEMPT ${attempt.attemptNumber || ''}`}</span><h3>{attempt.title}</h3><span>{attempt.totalQuestions} questions · at least 15 correct to pass</span></div><div className={`quiz-timer ${secondsRemaining <= 60 ? 'urgent' : ''}`} role="timer"><Clock3 size={17} />{formatRemaining(secondsRemaining)}</div></div>
+          <p className="quiz-rule-note">Your answers save as you go. The attempt submits automatically when the 10-minute timer expires.</p>
           {attempt.questions.map((question, index) => (
             <fieldset className="quiz-answer-card" key={`${attempt.id}-${index}`}>
               <legend>Question {index + 1} of {attempt.questions.length}</legend>
@@ -159,8 +159,12 @@ export default function StudentQuizSection({ classId, practice = false }) {
           <span className="student-eyebrow">{attempt.status === 'expired' ? 'TIME EXPIRED' : 'RESULT'}</span>
           <h3>{attempt.passed ? 'You passed!' : 'Keep practicing'}</h3>
           <strong>{attempt.correctCount} of {attempt.totalQuestions} correct · {attempt.scorePercent}%</strong>
-          <p>{attempt.passed ? 'You met the 75% passing score.' : 'You needed at least 75% to pass.'}</p>
-          <div className="quiz-review-list">{attempt.questions.map((question, index) => <article className="quiz-review-item" key={`${attempt.id}-review-${index}`}><strong>{index + 1}. {question.prompt}</strong><span className={question.isCorrect ? 'quiz-pass' : 'quiz-fail'}>{question.isCorrect ? 'Correct' : `Your answer: ${question.answer || 'No answer'}`}</span>{!question.isCorrect && <small>Correct answer: {question.correctAnswer}</small>}</article>)}</div>
+          <p>{attempt.latePenaltyApplied
+            ? `Late submission: score reduced by 50% (original score ${attempt.originalScorePercent}%).${attempt.passed ? ' Your original passing result still unlocks the next topic.' : ''}`
+            : attempt.passed ? 'You answered at least 15 of 20 questions correctly.' : 'You need at least 15 of 20 correct answers to pass.'}</p>
+          {attempt.passed
+            ? <div className="quiz-review-list">{attempt.questions.map((question, index) => <article className="quiz-review-item" key={`${attempt.id}-review-${index}`}><strong>{index + 1}. {question.prompt}</strong><span className={question.isCorrect ? 'quiz-pass' : 'quiz-fail'}>{question.isCorrect ? 'Correct' : `Your answer: ${question.answer || 'No answer'}`}</span>{!question.isCorrect && <small>Correct answer: {question.correctAnswer}</small>}</article>)}</div>
+            : <p className="quiz-answer-privacy-note">Correct answers are shown after you pass. Return to the quiz list to retake this quiz.</p>}
           <button className="quiz-secondary-button" type="button" onClick={() => { setAttempt(null); setError(''); setNotice(''); loadItems() }}><RotateCcw size={14} />Back to {practice ? 'practice topics' : 'quizzes'}</button>
         </div>
       ) : (
@@ -171,15 +175,18 @@ export default function StudentQuizSection({ classId, practice = false }) {
             const completedAttempt = !practice ? item.attempt : null
             const attemptsRemaining = practice ? item.attemptsRemaining : 1
             const itemId = item.id || item._id
-            return <article className={`quiz-list-card${!practice && !item.unlocked ? ' quiz-list-card-locked' : ''}`} key={itemId}>
-              <div><strong>{practice ? item.title : `Quiz ${item.sequence}: ${item.title}`}</strong><p>{practice ? item.description || item.originalFileName : item.description || `${item.questionCount} questions`}</p><small>{practice ? `${attemptsRemaining} of 3 practice attempts remaining · 20 questions · 10 minutes · 75% to pass` : `${item.questionCount} questions · 10 minutes · 75% to pass`}</small>
-                {!practice && item.deadline && <span className={`quiz-attempt-summary${item.deadlinePassed ? ' quiz-fail' : ''}`}>Deadline: {new Date(item.deadline).toLocaleString()}{item.deadlinePassed ? ' · Passed' : ''}</span>}
-                {!practice && !item.unlocked && <span className="quiz-attempt-summary quiz-locked-note"><LockKeyhole size={12} />Locked · Complete {item.lockedBy} first</span>}
+            const locked = practice ? item.unlocked === false : !item.unlocked
+            return <article className={`quiz-list-card${locked ? ' quiz-list-card-locked' : ''}`} key={itemId}>
+              <div><strong>{practice ? item.title : `Quiz ${item.sequence}: ${item.title}`}</strong><p>{practice ? item.description || item.originalFileName : item.description || `${item.questionCount} questions`}</p><small>{practice ? `${attemptsRemaining} of 3 practice attempts remaining · 20 questions · 10 minutes · 75% to pass` : `${item.questionCount} questions · 10 minutes · at least 15 correct to pass`}</small>
+                {!practice && item.deadline && <span className={`quiz-attempt-summary${item.deadlinePassed ? ' quiz-fail' : ''}`}>{item.deadlinePassed ? `Deadline passed · late attempts accepted with a 50% score penalty` : `Deadline: ${new Date(item.deadline).toLocaleString()}`}</span>}
+                {locked && <span className="quiz-attempt-summary quiz-locked-note"><LockKeyhole size={12} />Locked · Pass {item.lockedBy} first</span>}
+                {!practice && item.attemptCount > 0 && <span className="quiz-attempt-summary">{item.attemptCount} {item.attemptCount === 1 ? 'attempt' : 'attempts'} used</span>}
                 {completedAttempt?.status !== 'in_progress' && completedAttempt && <span className={`quiz-attempt-summary ${completedAttempt.passed ? 'quiz-pass' : 'quiz-fail'}`}>Previous result: {completedAttempt.scorePercent}% · {completedAttempt.passed ? 'Passed' : 'Not passed'}</span>}
                 {completedAttempt?.status === 'in_progress' && <span className="quiz-attempt-summary">Attempt in progress · resumes with remaining time</span>}
+                {practice && locked && <span className="quiz-attempt-summary quiz-locked-note"><LockKeyhole size={12} />Locked · Pass {item.lockedBy} first</span>}
               </div>
-              <button className="quiz-secondary-button" type="button" disabled={startingId === itemId || (practice && attemptsRemaining === 0) || (!practice && (item.deadlinePassed || !item.unlocked || (completedAttempt && completedAttempt.status !== 'in_progress')))} onClick={() => startItem(item)}>
-                <Play size={14} />{startingId === itemId ? (practice ? 'Generating…' : 'Opening…') : practice ? attemptsRemaining ? 'Start practice' : 'No attempts left' : item.deadlinePassed ? 'Deadline passed' : !item.unlocked ? 'Locked' : completedAttempt?.status === 'in_progress' ? 'Resume quiz' : completedAttempt ? 'Attempt used' : 'Start quiz'}
+              <button className="quiz-secondary-button" type="button" disabled={startingId === itemId || locked || (practice && attemptsRemaining === 0) || (!practice && item.passed) || (!practice && completedAttempt?.status === 'in_progress' && !item.unlocked)} onClick={() => startItem(item)}>
+                <Play size={14} />{startingId === itemId ? (practice ? 'Generating…' : 'Opening…') : practice ? locked ? 'Locked' : attemptsRemaining ? 'Start practice' : 'No attempts left' : item.passed ? 'Passed' : !item.unlocked ? 'Locked' : completedAttempt?.status === 'in_progress' ? 'Resume quiz' : completedAttempt ? 'Retake quiz' : 'Start quiz'}
               </button>
             </article>
           })}

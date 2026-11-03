@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Home,
   LogOut,
+  NotebookPen,
   UserRoundPen,
   UsersRound,
 } from 'lucide-react'
@@ -22,12 +23,21 @@ function isActive(location, path) {
   return location.pathname === path
 }
 
-export default function Sidebar({ onOpenJoinClass }) {
+export default function Sidebar({ onOpenJoinClass, onOpenQuickNotes, quickNotesOpen = false, onRequestSignOut }) {
   const { user, logout } = useAuth()
   const location = useLocation()
   const rolePath = { ADMIN: '/admin', PROFESSOR: '/professor', STUDENT: '/student' }[user?.role]
 
-  if (user?.role === 'STUDENT') return <StudentSidebar onOpenJoinClass={onOpenJoinClass} />
+  if (user?.role === 'STUDENT') {
+    return (
+      <StudentSidebar
+        onOpenJoinClass={onOpenJoinClass}
+        onOpenQuickNotes={onOpenQuickNotes}
+        quickNotesOpen={quickNotesOpen}
+        onRequestSignOut={onRequestSignOut}
+      />
+    )
+  }
 
   const navItems = user?.role === 'PROFESSOR'
     ? [
@@ -35,6 +45,7 @@ export default function Sidebar({ onOpenJoinClass }) {
           { label: 'My classes', path: '/professor#classes', icon: BookOpen },
           { label: 'Create class', path: '/professor/classes/new', icon: CalendarPlus },
           { label: 'My schedule', path: '/professor#schedule', icon: CalendarDays },
+          { label: 'Quick Notes', action: onOpenQuickNotes, icon: NotebookPen },
           { label: 'Edit profile', path: '/profile', icon: UserRoundPen },
         ]
     : user?.role === 'ADMIN'
@@ -42,6 +53,7 @@ export default function Sidebar({ onOpenJoinClass }) {
             { label: 'Admin dashboard', path: '/admin', icon: Home },
             { label: 'Subjects', path: '/admin/subjects', icon: BookOpen },
             { label: 'Class offerings', path: '/admin/classes', icon: CalendarDays },
+            { label: 'Professors', path: '/admin/professors', icon: UsersRound },
             { label: 'Create professor', path: '/admin/professors/new', icon: UsersRound },
           ]
       : []
@@ -56,7 +68,7 @@ export default function Sidebar({ onOpenJoinClass }) {
       </Link>
       <nav className="sidebar-nav">
         {navItems.map(({ label, path, action, icon: Icon }) => {
-          const active = path ? isActive(location, path) : false
+          const active = label === 'Quick Notes' ? quickNotesOpen : path ? isActive(location, path) : false
           return path ? (
             <Link
               key={label}
@@ -70,14 +82,28 @@ export default function Sidebar({ onOpenJoinClass }) {
               <span className="sidebar-tooltip" role="tooltip">{label}</span>
             </Link>
           ) : (
-            <button key={label} className="sidebar-link" type="button" onClick={action} aria-label={label} title={label}>
+            <button
+              key={label}
+              className={`sidebar-link${active ? ' active' : ''}`}
+              type="button"
+              onClick={action}
+              aria-label={label}
+              aria-pressed={label === 'Quick Notes' ? quickNotesOpen : undefined}
+              title={label}
+            >
               <Icon size={17} />
               <span className="sidebar-tooltip" role="tooltip">{label}</span>
             </button>
           )
         })}
       </nav>
-      <button className="sidebar-link sidebar-logout" type="button" onClick={logout} aria-label="Sign out" title="Sign out">
+      <button
+        className="sidebar-link sidebar-logout"
+        type="button"
+        onClick={user.role === 'PROFESSOR' && onRequestSignOut ? onRequestSignOut : logout}
+        aria-label="Sign out"
+        title="Sign out"
+      >
         <LogOut size={17} />
         <span className="sidebar-tooltip" role="tooltip">Sign out</span>
       </button>

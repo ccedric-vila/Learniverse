@@ -1,8 +1,8 @@
-import { BookOpen, Home, LogOut, Plus, UserRoundPen } from 'lucide-react'
+import { BookOpen, Home, ListChecks, LogOut, NotebookPen, Plus, UserRoundPen } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
-export default function StudentSidebar({ onOpenJoinClass }) {
+export default function StudentSidebar({ onOpenJoinClass, onOpenQuickNotes, quickNotesOpen = false, onRequestSignOut }) {
   const { user, logout } = useAuth()
   const location = useLocation()
 
@@ -12,6 +12,8 @@ export default function StudentSidebar({ onOpenJoinClass }) {
     { label: 'My dashboard', path: '/student', icon: Home },
     { label: 'My classes', path: '/student#classes', icon: BookOpen },
     { label: 'Join a class', action: onOpenJoinClass, icon: Plus },
+    { label: 'To-Do', path: '/student/todo', icon: ListChecks },
+    { label: 'Quick Notes', action: onOpenQuickNotes, icon: NotebookPen },
     { label: 'Edit profile', path: '/profile', icon: UserRoundPen },
   ]
 
@@ -23,7 +25,7 @@ export default function StudentSidebar({ onOpenJoinClass }) {
       </Link>
       <nav className="sidebar-nav">
         {navItems.map(({ label, path, action, icon: Icon }) => {
-          const active = path === '/student#classes'
+          const active = label === 'Quick Notes' ? quickNotesOpen : path === '/student#classes'
             ? location.hash === '#classes' || location.pathname.startsWith('/student/classes/')
             : location.pathname === path
           return path ? (
@@ -39,14 +41,22 @@ export default function StudentSidebar({ onOpenJoinClass }) {
               <span className="sidebar-tooltip" role="tooltip">{label}</span>
             </Link>
           ) : (
-            <button key={label} className="sidebar-link" type="button" onClick={action} aria-label={label} title={label}>
+            <button
+              key={label}
+              className={`sidebar-link${active ? ' active' : ''}`}
+              type="button"
+              onClick={action}
+              aria-label={label}
+              aria-pressed={label === 'Quick Notes' ? quickNotesOpen : undefined}
+              title={label}
+            >
               <Icon size={17} />
               <span className="sidebar-tooltip" role="tooltip">{label}</span>
             </button>
           )
         })}
       </nav>
-      <button className="sidebar-link sidebar-logout" type="button" onClick={logout} aria-label="Sign out" title="Sign out">
+      <button className="sidebar-link sidebar-logout" type="button" onClick={onRequestSignOut || logout} aria-label="Sign out" title="Sign out">
         <LogOut size={17} />
         <span className="sidebar-tooltip" role="tooltip">Sign out</span>
       </button>

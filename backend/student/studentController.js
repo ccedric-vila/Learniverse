@@ -4,6 +4,7 @@ const Enrollment = require('../src/models/Enrollment');
 const MaterialSubmission = require('../src/models/MaterialSubmission');
 const Quiz = require('../src/models/Quiz');
 const QuizAttempt = require('../src/models/QuizAttempt');
+const { addQuizProgress } = require('../quizzes/quizLogic');
 const User = require('../src/models/User');
 const { notifyStudentEnrolled } = require('../notifications/notificationService');
 const COURSE_PROGRAMS = require('../utils/coursePrograms');
@@ -149,6 +150,7 @@ async function getClassTasks(req, res, next) {
       }).select('_id title category deadline').lean(),
       Quiz.find({ classOffering: offering._id, isPublished: true })
         .select('_id title deadline')
+        .sort({ createdAt: 1, _id: 1 })
         .lean(),
     ]);
     const [submissions, attempts] = await Promise.all([
@@ -156,11 +158,11 @@ async function getClassTasks(req, res, next) {
         .select('material status submittedAt')
         .lean(),
       QuizAttempt.find({ student: req.user._id, quiz: { $in: quizzes.map((quiz) => quiz._id) }, attemptType: 'quiz' })
-        .select('quiz status submittedAt')
+        .select('quiz status submittedAt passed createdAt')
         .lean(),
     ]);
     const submissionsByMaterial = new Map(submissions.map((submission) => [String(submission.material), submission]));
-    const attemptsByQuiz = new Map(attempts.map((attempt) => [String(attempt.quiz), attempt]));
+    const quizProgressById = new Map(addQuizProgress(quizzes, attempts).map((quiz) => [String(quiz._id), quiz]));
     const now = new Date();
     const tasks = [
       ...materials.map((material) => {
@@ -177,8 +179,8 @@ async function getClassTasks(req, res, next) {
         };
       }),
       ...quizzes.map((quiz) => {
-        const attempt = attemptsByQuiz.get(String(quiz._id));
-        const completed = Boolean(attempt?.submittedAt && ['submitted', 'expired'].includes(attempt.status));
+        const progress = quizProgressById.get(String(quiz._id));
+        const completed = Boolean(progress?.passed);
         return {
           id: String(quiz._id),
           type: 'quiz',
@@ -186,6 +188,8 @@ async function getClassTasks(req, res, next) {
           category: 'quiz',
           deadline: quiz.deadline || null,
           completed,
+          locked: !progress?.unlocked,
+          lockedBy: progress?.lockedBy || null,
           overdue: !completed && Boolean(quiz.deadline && quiz.deadline < now),
         };
       }),

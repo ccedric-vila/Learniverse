@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, BookOpen, CalendarDays, Check, Clipboard, Clock3, Download, Eye, FileText, Files, Mail, MapPin, RefreshCw, School, Search, Trash2, Upload, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, BookOpen, CalendarDays, Check, Clipboard, Clock3, Download, Eye, FileText, Files, Mail, MapPin, Pencil, Plus, RefreshCw, Save, School, Search, Trash2, Upload, UsersRound, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { strToU8, zipSync } from 'fflate'
 import { Link, useParams } from 'react-router-dom'
@@ -8,6 +8,7 @@ import ProfessorQuizManager from './ProfessorQuizManager'
 import './professor.css'
 
 const EMPTY_MATERIALS = []
+const CLASS_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const nameCollator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
 
 function compareStudentsByLastName(first, second) {
@@ -154,8 +155,15 @@ export default function ProfessorClassroom() {
   const [materialSearch, setMaterialSearch] = useState('')
   const [materialFilter, setMaterialFilter] = useState('all')
   const [activeClassTab, setActiveClassTab] = useState('overview')
+  const [quizDraftDirty, setQuizDraftDirty] = useState(false)
+  const [pendingClassTab, setPendingClassTab] = useState(null)
+  const [classDetailsForm, setClassDetailsForm] = useState({ section: '', schoolYear: '', term: '', schedule: [] })
+  const [classDetailsSaving, setClassDetailsSaving] = useState(false)
+  const [classDetailsError, setClassDetailsError] = useState('')
+  const [classDetailsMessage, setClassDetailsMessage] = useState('')
   const [studentSearch, setStudentSearch] = useState('')
   const [rosterExportError, setRosterExportError] = useState('')
+  const quizDraftDiscardRef = useRef(null)
   const materialDialogRef = useRef(null)
 
   useEffect(() => {
@@ -277,6 +285,70 @@ export default function ProfessorClassroom() {
     })
   }, [allMaterials, materialFilter, materialSearch])
 
+  function editClassDetails() {
+    setClassDetailsForm({
+      section: offering.section || '',
+      schoolYear: offering.schoolYear || '',
+      term: offering.term || '',
+      schedule: (offering.schedule || []).map((meeting) => ({ ...meeting })),
+    })
+    setClassDetailsError('')
+    setClassDetailsMessage('')
+    setActiveClassTab('details')
+  }
+
+  function applyClassTabChange(tab) {
+    if (tab === 'details') {
+      editClassDetails()
+      return
+    }
+    setActiveClassTab(tab)
+    if (tab === 'students') loadClassStudents()
+    if (tab === 'files') loadAllProfessorMaterials()
+  }
+
+  function requestClassTabChange(tab) {
+    if (tab === activeClassTab) return
+    if (activeClassTab === 'quizzes' && quizDraftDirty) {
+      setPendingClassTab(tab)
+      return
+    }
+    applyClassTabChange(tab)
+  }
+
+  function confirmLeaveQuizTab() {
+    const nextTab = pendingClassTab
+    setPendingClassTab(null)
+    quizDraftDiscardRef.current?.()
+    setQuizDraftDirty(false)
+    if (nextTab) applyClassTabChange(nextTab)
+  }
+
+  function updateClassMeeting(index, field, value) {
+    setClassDetailsForm((current) => ({
+      ...current,
+      schedule: current.schedule.map((meeting, meetingIndex) => (
+        meetingIndex === index ? { ...meeting, [field]: value } : meeting
+      )),
+    }))
+  }
+
+  async function saveClassDetails(event) {
+    event.preventDefault()
+    setClassDetailsSaving(true)
+    setClassDetailsError('')
+    setClassDetailsMessage('')
+    try {
+      const { data } = await api.patch(`/professor/classes/${classId}`, classDetailsForm)
+      setRequestState({ classId, offering: data.offering, error: '' })
+      setClassDetailsMessage(data.notificationWarning || 'Class details saved successfully.')
+    } catch (requestError) {
+      setClassDetailsError(requestError.response?.data?.message || 'Could not save class details.')
+    } finally {
+      setClassDetailsSaving(false)
+    }
+  }
+
   async function copyClassCode() {
     try {
       await navigator.clipboard.writeText(offering.classCode)
@@ -374,13 +446,71 @@ export default function ProfessorClassroom() {
       {error && <div className="professor-error" role="alert">{error}</div>}
 
       <nav className="professor-class-tabs" aria-label="Class sections" role="tablist">
-        <button id="professor-class-overview-tab" role="tab" aria-selected={activeClassTab === 'overview'} aria-controls="professor-class-overview-panel" className={activeClassTab === 'overview' ? 'active' : ''} type="button" onClick={() => setActiveClassTab('overview')}><School size={15} />Class overview</button>
-        <button id="professor-class-students-tab" role="tab" aria-selected={activeClassTab === 'students'} aria-controls="professor-class-students-panel" className={activeClassTab === 'students' ? 'active' : ''} type="button" onClick={() => { setActiveClassTab('students'); loadClassStudents() }}><UsersRound size={15} />Students{studentsState.classId === classId && !studentsState.loading ? ` ${students.length}` : ''}</button>
-        <button id="professor-class-quizzes-tab" role="tab" aria-selected={activeClassTab === 'quizzes'} aria-controls="professor-class-quizzes-panel" className={activeClassTab === 'quizzes' ? 'active' : ''} type="button" onClick={() => setActiveClassTab('quizzes')}><Clipboard size={15} />Quiz creation</button>
-        <button id="professor-class-files-tab" role="tab" aria-selected={activeClassTab === 'files'} aria-controls="professor-class-files-panel" className={activeClassTab === 'files' ? 'active' : ''} type="button" onClick={() => { setActiveClassTab('files'); loadAllProfessorMaterials() }}><Files size={15} />All uploaded files</button>
+        <button id="professor-class-overview-tab" role="tab" aria-selected={activeClassTab === 'overview'} aria-controls="professor-class-overview-panel" className={activeClassTab === 'overview' ? 'active' : ''} type="button" onClick={() => requestClassTabChange('overview')}><School size={15} />Class overview</button>
+        <button id="professor-class-details-tab" role="tab" aria-selected={activeClassTab === 'details'} aria-controls="professor-class-details-panel" className={activeClassTab === 'details' ? 'active' : ''} type="button" onClick={() => requestClassTabChange('details')}><Pencil size={14} />Class details</button>
+        <button id="professor-class-students-tab" role="tab" aria-selected={activeClassTab === 'students'} aria-controls="professor-class-students-panel" className={activeClassTab === 'students' ? 'active' : ''} type="button" onClick={() => requestClassTabChange('students')}><UsersRound size={15} />Students{studentsState.classId === classId && !studentsState.loading ? ` ${students.length}` : ''}</button>
+        <button id="professor-class-quizzes-tab" role="tab" aria-selected={activeClassTab === 'quizzes'} aria-controls="professor-class-quizzes-panel" className={activeClassTab === 'quizzes' ? 'active' : ''} type="button" onClick={() => requestClassTabChange('quizzes')}><Clipboard size={15} />Quiz creation</button>
+        <button id="professor-class-files-tab" role="tab" aria-selected={activeClassTab === 'files'} aria-controls="professor-class-files-panel" className={activeClassTab === 'files' ? 'active' : ''} type="button" onClick={() => requestClassTabChange('files')}><Files size={15} />All uploaded files</button>
       </nav>
+      {pendingClassTab && (
+        <div
+          className="quiz-draft-confirmation-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPendingClassTab(null)
+          }}
+        >
+          <section
+            className="quiz-draft-confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="class-quiz-draft-confirmation-title"
+            aria-describedby="class-quiz-draft-confirmation-description"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setPendingClassTab(null)
+            }}
+          >
+            <span className="quiz-draft-confirmation-icon"><AlertTriangle size={21} /></span>
+            <h3 id="class-quiz-draft-confirmation-title">Leave quiz creation?</h3>
+            <p id="class-quiz-draft-confirmation-description">Your quiz draft has not been published. If you leave this section, the information and questions you entered will be lost and cannot be recovered.</p>
+            <div className="quiz-draft-confirmation-actions">
+              <button type="button" className="quiz-draft-stay-button" autoFocus onClick={() => setPendingClassTab(null)}>Stay and keep editing</button>
+              <button type="button" className="quiz-draft-leave-button" onClick={confirmLeaveQuizTab}>Leave and discard draft</button>
+            </div>
+          </section>
+        </div>
+      )}
 
-      {activeClassTab === 'students' ? (
+      {activeClassTab === 'details' ? (
+        <section id="professor-class-details-panel" className="professor-class-details-panel" role="tabpanel" aria-labelledby="professor-class-details-tab">
+          <div className="professor-files-title">
+            <span className="professor-files-title-icon"><Pencil size={19} /></span>
+            <div><span className="professor-eyebrow">CLASS SETTINGS</span><h2>Edit class details</h2><p>Update your class section, term, and weekly meeting schedule.</p></div>
+          </div>
+          {classDetailsMessage && <p className="professor-class-details-message" role="status">{classDetailsMessage}</p>}
+          {classDetailsError && <div className="professor-error" role="alert">{classDetailsError}</div>}
+          <form className="professor-class-details-form" onSubmit={saveClassDetails}>
+            <div className="professor-class-details-fields">
+              <label><span>Section</span><input required maxLength={30} value={classDetailsForm.section} onChange={(event) => setClassDetailsForm((current) => ({ ...current, section: event.target.value }))} /></label>
+              <label><span>School year</span><input required maxLength={30} value={classDetailsForm.schoolYear} onChange={(event) => setClassDetailsForm((current) => ({ ...current, schoolYear: event.target.value }))} /></label>
+              <label><span>Term</span><input required maxLength={50} value={classDetailsForm.term} onChange={(event) => setClassDetailsForm((current) => ({ ...current, term: event.target.value }))} /></label>
+              <div className="professor-class-details-readonly"><span>Subject</span><strong>{offering.subject?.name || 'Unavailable'}</strong><small>Subject assignment is managed by your administrator.</small></div>
+            </div>
+            <div className="professor-class-details-schedule-heading"><div><span className="professor-eyebrow">WEEKLY MEETINGS</span><h3>Class schedule</h3></div><button className="classroom-copy-button" type="button" onClick={() => setClassDetailsForm((current) => ({ ...current, schedule: [...current.schedule, { day: 'Monday', startTime: '09:00', endTime: '10:30', room: '' }] }))}><Plus size={14} />Add meeting</button></div>
+            <div className="professor-class-details-schedule">
+              {classDetailsForm.schedule.map((meeting, index) => (
+                <div className="professor-class-details-meeting" key={`class-meeting-${index}`}>
+                  <label><span>Day</span><select value={meeting.day} onChange={(event) => updateClassMeeting(index, 'day', event.target.value)}>{CLASS_DAYS.map((day) => <option key={day} value={day}>{day}</option>)}</select></label>
+                  <label><span>Starts</span><input type="time" required value={meeting.startTime} onChange={(event) => updateClassMeeting(index, 'startTime', event.target.value)} /></label>
+                  <label><span>Ends</span><input type="time" required value={meeting.endTime} onChange={(event) => updateClassMeeting(index, 'endTime', event.target.value)} /></label>
+                  <label><span>Room</span><input maxLength={100} value={meeting.room || ''} onChange={(event) => updateClassMeeting(index, 'room', event.target.value)} placeholder="Room (optional)" /></label>
+                  <button className="professor-class-details-remove" type="button" disabled={classDetailsForm.schedule.length === 1} aria-label={`Remove meeting ${index + 1}`} onClick={() => setClassDetailsForm((current) => ({ ...current, schedule: current.schedule.filter((_, meetingIndex) => meetingIndex !== index) }))}><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+            <div className="professor-class-details-actions"><button className="classroom-copy-button" type="button" onClick={() => setActiveClassTab('overview')}>Cancel</button><button className="professor-class-details-save" type="submit" disabled={classDetailsSaving}>{classDetailsSaving ? <RefreshCw size={14} className="professor-files-spinner" /> : <Save size={14} />}{classDetailsSaving ? 'Saving…' : 'Save class details'}</button></div>
+          </form>
+        </section>
+      ) : activeClassTab === 'students' ? (
         <section id="professor-class-students-panel" className="professor-students-tab-panel" role="tabpanel" aria-labelledby="professor-class-students-tab">
           <div className="professor-students-toolbar">
             <div className="professor-files-title">
@@ -419,7 +549,12 @@ export default function ProfessorClassroom() {
         </section>
       ) : activeClassTab === 'quizzes' ? (
         <section id="professor-class-quizzes-panel" className="professor-quiz-tab-panel" role="tabpanel" aria-labelledby="professor-class-quizzes-tab">
-          <ProfessorQuizManager classId={classId} className={`${offering.subject?.name || 'Class'} - Section ${offering.section}`} />
+          <ProfessorQuizManager
+            classId={classId}
+            className={`${offering.subject?.name || 'Class'} - Section ${offering.section}`}
+            onDraftStateChange={setQuizDraftDirty}
+            onDraftDiscardRef={quizDraftDiscardRef}
+          />
         </section>
       ) : activeClassTab === 'files' ? (
         <section id="professor-class-files-panel" className="professor-files-tab-panel" role="tabpanel" aria-labelledby="professor-class-files-tab">
@@ -478,7 +613,7 @@ export default function ProfessorClassroom() {
         </section>
         <div className="professor-classroom-main-column">
           <section className="professor-section classroom-section">
-            <div className="professor-section-heading"><div><span className="professor-eyebrow">WEEKLY MEETINGS</span><h2>Class schedule</h2></div></div>
+            <div className="professor-section-heading"><div><span className="professor-eyebrow">WEEKLY MEETINGS</span><h2>Class schedule</h2></div><button className="classroom-copy-button" type="button" onClick={editClassDetails}><Pencil size={14} />Edit details</button></div>
             {offering.schedule?.length ? <div className="classroom-schedule-list">{offering.schedule.map((meeting, index) => <article className="classroom-schedule-row" key={`${meeting.day}-${meeting.startTime}-${index}`}>
               <span className="classroom-day"><CalendarDays size={15} />{meeting.day}</span>
               <span className="classroom-meeting-time"><Clock3 size={15} />{formatTime(meeting.startTime)} – {formatTime(meeting.endTime)}</span>
@@ -514,7 +649,7 @@ export default function ProfessorClassroom() {
               <div className="material-form-grid">
                 <label className="material-field"><span>Title <b>*</b></span><input required maxLength="160" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Week 1 lecture slides" /></label>
                 <label className="material-field"><span>Category <b>*</b></span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="lesson">Lesson</option><option value="seatwork">Seatwork</option><option value="quiz">Quiz</option></select></label>
-                <label className="material-field material-field-wide"><span>File <b>*</b><small>PDF, DOC/DOCX, or PPT/PPTX · up to 20 MB</small></span><input required type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" onChange={(event) => setFile(event.target.files?.[0] || null)} /></label>
+                <label className="material-field material-field-wide"><span>File <b>*</b><small>PDF, DOC/DOCX, or PPT/PPTX · up to 20 MB</small></span><input required type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" onChange={(event) => setFile(event.target.files?.[0] || null)} />{file && <small className="material-selected-file" role="status"><FileText size={13} />{file.name}</small>}</label>
                 {category !== 'lesson' && <>
                   <label className="material-field"><span>Total points <b>*</b></span><input required type="number" min="1" max="100000" step="1" value={pointsPossible} onChange={(event) => setPointsPossible(event.target.value)} placeholder="100" /></label>
                   <label className="material-field"><span>Deadline <b>*</b></span><input required type="datetime-local" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></label>

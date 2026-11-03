@@ -8,6 +8,7 @@ const ClassOffering = require('../src/models/ClassOffering');
 const Enrollment = require('../src/models/Enrollment');
 const { notifyGradePosted, notifyMaterialPublished } = require('../notifications/notificationService');
 const { cloudinary, folder } = require('../config/cloudinary');
+const { getStudentLessonProgress } = require('../quizzes/studentLessonProgress');
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const allowedFiles = {
@@ -298,6 +299,13 @@ async function findStudentMaterial(materialId, studentId) {
   ]);
   if (!enrollment || !offering) throw createHttpError(404, 'Class material not found in your active classes.');
   if (material.availableAt > new Date()) throw createHttpError(404, 'This material is not available yet.');
+  if (isLessonCategory(material.category)) {
+    const lessonProgress = await getStudentLessonProgress(material.classOffering, studentId);
+    const lesson = lessonProgress.find((entry) => String(entry._id) === String(material._id));
+    if (!lesson?.unlocked) {
+      throw createHttpError(403, `Pass "${lesson?.lockedBy || 'the previous quiz'}" before opening this lesson.`);
+    }
+  }
   return material;
 }
 
@@ -307,11 +315,22 @@ async function getStudentMaterials(req, res, next) {
     const offering = await ClassOffering.findOne({ _id: req.params.classId, isActive: true }).select('_id');
     if (!enrollment || !offering) return res.status(404).json({ message: 'Class not found in your active enrollments.' });
 
-    const materials = await ClassMaterial.find({ classOffering: req.params.classId, availableAt: { $lte: new Date() } })
-      .select(publicMaterialFields)
-      .sort({ availableAt: -1, createdAt: -1 })
-      .lean();
-    return res.json({ materials });
+    const [materials, lessonProgress] = await Promise.all([
+      ClassMaterial.find({ classOffering: req.params.classId, availableAt: { $lte: new Date() } })
+        .select(publicMaterialFields)
+        .sort({ availableAt: -1, createdAt: -1 })
+        .lean(),
+      getStudentLessonProgress(req.params.classId, req.user._id),
+    ]);
+    const progressById = new Map(lessonProgress.map((material) => [String(material._id), material]));
+    return res.json({
+      materials: materials.map((material) => {
+        const progress = progressById.get(String(material._id));
+        return isLessonCategory(material.category)
+          ? { ...material, sequence: progress?.sequence, unlocked: progress?.unlocked ?? true, lockedBy: progress?.lockedBy || null }
+          : material;
+      }),
+    });
   } catch (error) {
     if (error.name === 'CastError') return res.status(404).json({ message: 'Class not found in your active enrollments.' });
     return next(error);

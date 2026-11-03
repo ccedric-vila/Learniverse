@@ -31,8 +31,8 @@ function normalizeQuestion(question) {
 }
 
 function normalizeQuizQuestions(questions) {
-  if (!Array.isArray(questions) || questions.length < 1 || questions.length > MAX_QUESTIONS) {
-    throw new Error('A quiz must contain between 1 and 20 questions.');
+  if (!Array.isArray(questions) || questions.length !== MAX_QUESTIONS) {
+    throw new Error('A quiz must contain exactly 20 questions.');
   }
   return questions.map(normalizeQuestion);
 }
@@ -45,9 +45,8 @@ function normalizeQuizDeadline(value, now = new Date()) {
   return deadline;
 }
 
-function quizAttemptExpiresAt(startedAt, deadline) {
-  const timerExpiresAt = new Date(startedAt.getTime() + QUIZ_DURATION_MINUTES * 60 * 1000);
-  return deadline && deadline < timerExpiresAt ? deadline : timerExpiresAt;
+function quizAttemptExpiresAt(startedAt) {
+  return new Date(startedAt.getTime() + QUIZ_DURATION_MINUTES * 60 * 1000);
 }
 
 function scoreAnswers(questions, answers) {
@@ -57,7 +56,18 @@ function scoreAnswers(questions, answers) {
     return count + (answer.trim().toLowerCase() === question.correctAnswer.trim().toLowerCase() ? 1 : 0);
   }, 0);
   const scorePercent = Math.round((correctCount / questions.length) * 100);
-  return { correctCount, scorePercent, passed: scorePercent >= PASSING_PERCENT };
+  return { correctCount, scorePercent, passed: correctCount / questions.length * 100 >= PASSING_PERCENT };
+}
+
+function recordQuizScore(result, latePenaltyApplied) {
+  return {
+    ...result,
+    originalCorrectCount: result.correctCount,
+    originalScorePercent: result.scorePercent,
+    correctCount: result.correctCount,
+    scorePercent: latePenaltyApplied ? result.scorePercent / 2 : result.scorePercent,
+    latePenaltyApplied,
+  };
 }
 
 function publicQuestions(questions, revealAnswers = false, answers = []) {
@@ -75,25 +85,66 @@ function publicQuestions(questions, revealAnswers = false, answers = []) {
 }
 
 function addQuizProgress(quizzes, attempts) {
-  const attemptsByQuiz = new Map(attempts.map((attempt) => [String(attempt.quiz), attempt]));
-  let firstIncompleteQuiz = null;
+  const attemptsByQuiz = new Map();
+  for (const attempt of attempts) {
+    const key = String(attempt.quiz);
+    if (!attemptsByQuiz.has(key)) attemptsByQuiz.set(key, []);
+    attemptsByQuiz.get(key).push(attempt);
+  }
 
   return quizzes.map((quiz, index) => {
-    const attempt = attemptsByQuiz.get(String(quiz._id));
-    const unlocked = firstIncompleteQuiz === null || Boolean(attempt);
+    const quizAttempts = attemptsByQuiz.get(String(quiz._id)) || [];
+    quizAttempts.sort((first, second) => new Date(second.createdAt || second.submittedAt || 0) - new Date(first.createdAt || first.submittedAt || 0));
+    const attempt = quizAttempts[0] || null;
+    const passed = quizAttempts.some((quizAttempt) => quizAttempt.passed === true);
+    const unlocked = index === 0 || quizzes.slice(0, index).every((previousQuiz) => (
+      (attemptsByQuiz.get(String(previousQuiz._id)) || []).some((quizAttempt) => quizAttempt.passed === true)
+    ));
     const result = {
       ...quiz,
       sequence: index + 1,
       unlocked,
-      lockedBy: unlocked ? null : firstIncompleteQuiz,
+      lockedBy: unlocked ? null : quizzes.find((previousQuiz, previousIndex) => (
+        previousIndex < index
+        && !(attemptsByQuiz.get(String(previousQuiz._id)) || []).some((quizAttempt) => quizAttempt.passed === true)
+      ))?.title,
       attempt: attempt || null,
+      attemptCount: quizAttempts.length,
+      passed,
     };
-
-    if (!firstIncompleteQuiz && (!attempt || attempt.status === 'in_progress')) {
-      firstIncompleteQuiz = quiz.title;
-    }
-
     return result;
+  });
+}
+
+function addLessonProgress(materials, quizzes, attempts) {
+  const attemptsByQuiz = new Map();
+  for (const attempt of attempts) {
+    const key = String(attempt.quiz);
+    if (!attemptsByQuiz.has(key)) attemptsByQuiz.set(key, []);
+    attemptsByQuiz.get(key).push(attempt);
+  }
+
+  const sortedMaterials = [...materials].sort((first, second) => (
+    new Date(first.availableAt || first.createdAt || 0) - new Date(second.availableAt || second.createdAt || 0)
+    || new Date(first.createdAt || 0) - new Date(second.createdAt || 0)
+    || String(first._id).localeCompare(String(second._id))
+  ));
+  let passedQuizCount = 0;
+  while (passedQuizCount < quizzes.length) {
+    const quiz = quizzes[passedQuizCount];
+    const hasPassed = (attemptsByQuiz.get(String(quiz._id)) || []).some((attempt) => attempt.passed === true);
+    if (!hasPassed) break;
+    passedQuizCount += 1;
+  }
+
+  return sortedMaterials.map((material, index) => {
+    const unlocked = index <= passedQuizCount;
+    return {
+      ...material,
+      sequence: index + 1,
+      unlocked,
+      lockedBy: unlocked ? null : quizzes[passedQuizCount]?.title || quizzes.at(-1)?.title || null,
+    };
   });
 }
 
@@ -101,11 +152,13 @@ module.exports = {
   MAX_QUESTIONS,
   PASSING_PERCENT,
   QUIZ_DURATION_MINUTES,
+  addLessonProgress,
   addQuizProgress,
   normalizeQuestion,
   normalizeQuizDeadline,
   normalizeQuizQuestions,
   publicQuestions,
   quizAttemptExpiresAt,
+  recordQuizScore,
   scoreAnswers,
 };

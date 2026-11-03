@@ -10,7 +10,8 @@
     "admin:bootstrap": "node scripts/ensureAdmin.js",
     "users:backfill-usernames": "node scripts/backfillUsernames.js",
     "subjects:seed-curriculum": "node scripts/seedCourseCurriculum.js",
-    "subjects:replace-catalog": "node scripts/replaceSubjectCatalog.js"
+    "subjects:replace-catalog": "node scripts/replaceSubjectCatalog.js",
+    "quizzes:migrate-retakes": "node scripts/migrateQuizRetakes.js"
   },
   "keywords": [],
   "author": "",

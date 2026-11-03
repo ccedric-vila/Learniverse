@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowUpRight, BookOpen, CalendarDays, ClipboardList, GraduationCap, MessageCircle, Sparkles, UsersRound } from 'lucide-react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
@@ -8,13 +8,17 @@ import Register from './auth/Register'
 import Profile from './auth/Profile'
 import AdminDashboard from './admin/AdminDashboard'
 import AdminAcademics from './admin/AdminAcademics'
+import AdminProfessors from './admin/AdminProfessors'
 import CreateProfessor from './admin/CreateProfessor'
 import ProfessorDashboard from './professor/ProfessorDashboard'
 import ProfessorClassroom from './professor/ProfessorClassroom'
 import ProfessorCreateClass from './professor/ProfessorCreateClass'
 import ProfessorMaterialReview from './professor/ProfessorMaterialReview'
+import ProfessorQuickNotes from './professor/ProfessorQuickNotes'
+import ProfessorSignOutConfirmation from './professor/ProfessorSignOutConfirmation'
 import StudentDashboard from './student/StudentDashboard'
 import StudentClassroom from './student/StudentClassroom'
+import StudentTodo from './student/StudentTodo'
 import JoinClass from './student/JoinClass'
 import MaterialDetail from './student/MaterialDetail'
 import MaterialFileViewer from './student/MaterialFileViewer'
@@ -185,9 +189,20 @@ function HomePage() {
 }
 
 function AppRoutes() {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
+  const [quickNotesOpen, setQuickNotesOpen] = useState(false)
+  const [signOutConfirmationOpen, setSignOutConfirmationOpen] = useState(false)
+  const [professorTheme, setProfessorTheme] = useState(() => (
+    localStorage.getItem('learniverse-professor-theme') === 'dark' ? 'dark' : 'light'
+  ))
+  const [studentTheme, setStudentTheme] = useState(() => (
+    localStorage.getItem('learniverse-student-theme') === 'dark' ? 'dark' : 'light'
+  ))
+  const [adminTheme, setAdminTheme] = useState(() => (
+    localStorage.getItem('learniverse-admin-theme') === 'dark' ? 'dark' : 'light'
+  ))
   const isJoinClassOpen = Boolean(location.state?.openJoinClass)
 
   useEffect(() => {
@@ -210,10 +225,50 @@ function AppRoutes() {
     navigate(`${location.pathname}${location.search}${location.hash}`, { replace: true, state: null })
   }
 
+  function toggleProfessorTheme() {
+    const nextTheme = professorTheme === 'dark' ? 'light' : 'dark'
+    localStorage.setItem('learniverse-professor-theme', nextTheme)
+    setProfessorTheme(nextTheme)
+  }
+
+  function toggleStudentTheme() {
+    const nextTheme = studentTheme === 'dark' ? 'light' : 'dark'
+    localStorage.setItem('learniverse-student-theme', nextTheme)
+    setStudentTheme(nextTheme)
+  }
+
+  function toggleAdminTheme() {
+    const nextTheme = adminTheme === 'dark' ? 'light' : 'dark'
+    localStorage.setItem('learniverse-admin-theme', nextTheme)
+    setAdminTheme(nextTheme)
+  }
+
+  function confirmSignOut() {
+    setSignOutConfirmationOpen(false)
+    logout()
+  }
+
+  const professorStorageId = user?._id || user?.id || user?.email || 'local'
+  const quickNotesStorageKey = `learniverse.professor.quick-notes.v1.${encodeURIComponent(String(professorStorageId))}`
+  const studentStorageId = user?._id || user?.id || user?.email || 'local'
+  const studentQuickNotesStorageKey = `learniverse.student.quick-notes.v1.${encodeURIComponent(String(studentStorageId))}`
+
   return (
-    <div className={`app-shell${user ? ' authenticated-shell' : ''}${user?.role === 'STUDENT' ? ' student-sidebar-auto' : ''}${user?.role === 'PROFESSOR' ? ' professor-app-shell' : ''}`}>
-      <Sidebar onOpenJoinClass={openJoinClass} />
-      <Header />
+    <div className={`app-shell${user ? ' authenticated-shell' : ''}${user?.role === 'STUDENT' ? ' student-sidebar-auto student-app-shell' : ''}${user?.role === 'PROFESSOR' ? ' professor-app-shell' : ''}${user?.role === 'ADMIN' ? ' admin-app-shell' : ''}`} data-theme={user?.role === 'PROFESSOR' ? professorTheme : user?.role === 'STUDENT' ? studentTheme : user?.role === 'ADMIN' ? adminTheme : undefined}>
+      <Sidebar
+        onOpenJoinClass={openJoinClass}
+        onOpenQuickNotes={() => setQuickNotesOpen((isOpen) => !isOpen)}
+        quickNotesOpen={quickNotesOpen}
+        onRequestSignOut={() => setSignOutConfirmationOpen(true)}
+      />
+      <Header
+        professorTheme={professorTheme}
+        onToggleProfessorTheme={toggleProfessorTheme}
+        studentTheme={studentTheme}
+        onToggleStudentTheme={toggleStudentTheme}
+        adminTheme={adminTheme}
+        onToggleAdminTheme={toggleAdminTheme}
+      />
       <div className="app-main-column">
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -225,12 +280,14 @@ function AppRoutes() {
           <Route path="/admin/academics" element={<Navigate to="/admin/subjects" replace />} />
           <Route path="/admin/subjects" element={<ProtectedRoute allowedRoles={['ADMIN']}><AdminAcademics mode="subjects" /></ProtectedRoute>} />
           <Route path="/admin/classes" element={<ProtectedRoute allowedRoles={['ADMIN']}><AdminAcademics mode="classes" /></ProtectedRoute>} />
+          <Route path="/admin/professors" element={<ProtectedRoute allowedRoles={['ADMIN']}><AdminProfessors /></ProtectedRoute>} />
           <Route path="/admin/professors/new" element={<ProtectedRoute allowedRoles={['ADMIN']}><CreateProfessor /></ProtectedRoute>} />
           <Route path="/professor" element={<ProtectedRoute allowedRoles={['PROFESSOR']}><ProfessorDashboard /></ProtectedRoute>} />
           <Route path="/professor/classes/new" element={<ProtectedRoute allowedRoles={['PROFESSOR']}><ProfessorCreateClass /></ProtectedRoute>} />
           <Route path="/professor/classes/:classId" element={<ProtectedRoute allowedRoles={['PROFESSOR']}><ProfessorClassroom /></ProtectedRoute>} />
           <Route path="/professor/materials/:materialId" element={<ProtectedRoute allowedRoles={['PROFESSOR']}><ProfessorMaterialReview /></ProtectedRoute>} />
           <Route path="/student/classes/join" element={<ProtectedRoute allowedRoles={['STUDENT']}><Navigate to="/student" replace state={{ openJoinClass: true }} /></ProtectedRoute>} />
+          <Route path="/student/todo" element={<ProtectedRoute allowedRoles={['STUDENT']}><StudentTodo /></ProtectedRoute>} />
           <Route path="/student/classes/:classId/materials/:materialId/view" element={<ProtectedRoute allowedRoles={['STUDENT']}><MaterialFileViewer /></ProtectedRoute>} />
           <Route path="/student/classes/:classId/materials/:materialId" element={<ProtectedRoute allowedRoles={['STUDENT']}><MaterialDetail /></ProtectedRoute>} />
           <Route path="/student/classes/:classId" element={<ProtectedRoute allowedRoles={['STUDENT']}><StudentClassroom /></ProtectedRoute>} />
@@ -240,6 +297,32 @@ function AppRoutes() {
         </Routes>
         <Footer onOpenJoinClass={openJoinClass} />
       </div>
+      {user?.role === 'PROFESSOR' && quickNotesOpen && (
+        <ProfessorQuickNotes
+          key={quickNotesStorageKey}
+          storageKey={quickNotesStorageKey}
+          onClose={() => setQuickNotesOpen(false)}
+        />
+      )}
+      {user?.role === 'STUDENT' && quickNotesOpen && (
+        <ProfessorQuickNotes
+          key={studentQuickNotesStorageKey}
+          storageKey={studentQuickNotesStorageKey}
+          onClose={() => setQuickNotesOpen(false)}
+        />
+      )}
+      {user?.role === 'PROFESSOR' && signOutConfirmationOpen && (
+        <ProfessorSignOutConfirmation
+          onCancel={() => setSignOutConfirmationOpen(false)}
+          onConfirm={confirmSignOut}
+        />
+      )}
+      {user?.role === 'STUDENT' && signOutConfirmationOpen && (
+        <ProfessorSignOutConfirmation
+          onCancel={() => setSignOutConfirmationOpen(false)}
+          onConfirm={confirmSignOut}
+        />
+      )}
       {isJoinClassOpen && <JoinClass onClose={closeJoinClass} />}
     </div>
   )

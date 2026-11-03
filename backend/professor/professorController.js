@@ -5,6 +5,7 @@ const MaterialSubmission = require('../src/models/MaterialSubmission');
 const Subject = require('../src/models/Subject');
 const Quiz = require('../src/models/Quiz');
 const QuizAttempt = require('../src/models/QuizAttempt');
+const { notifyClassUpdated } = require('../notifications/notificationService');
 const COURSE_PROGRAMS = require('../utils/coursePrograms');
 const { DEPARTMENTS } = require('../utils/departments');
 const { departmentForProgram } = require('../utils/courseDepartments');
@@ -309,6 +310,72 @@ async function getClassDetails(req, res, next) {
   }
 }
 
+async function updateClassDetails(req, res, next) {
+  try {
+    const offering = await ClassOffering.findOne({
+      _id: req.params.classId,
+      professor: req.user._id,
+      isActive: true,
+    });
+    if (!offering) return res.status(404).json({ message: 'Class not found in your active assignments.' });
+
+    const { section, schoolYear, term, schedule } = req.body;
+    if (![section, schoolYear, term].every((value) => typeof value === 'string' && value.trim())) {
+      return res.status(400).json({ message: 'Section, school year, and term are required.' });
+    }
+
+    const meetings = normalizeSchedule(schedule);
+    const scheduleError = validateSchedule(meetings);
+    if (scheduleError) return res.status(400).json({ message: scheduleError });
+
+    const otherOfferings = await ClassOffering.find({
+      professor: req.user._id,
+      isActive: true,
+      _id: { $ne: offering._id },
+    })
+      .populate('subject', 'name')
+      .select('subject section schedule')
+      .lean();
+    const occupiedMeetings = otherOfferings.flatMap((otherOffering) => (
+      (otherOffering.schedule || []).map((meeting) => ({
+        ...meeting,
+        subject: otherOffering.subject?.name || 'Class',
+        section: otherOffering.section,
+      }))
+    ));
+    const scheduleConflicts = findScheduleConflicts(meetings, occupiedMeetings);
+    if (scheduleConflicts.length > 0) {
+      const conflict = scheduleConflicts[0];
+      return res.status(409).json({
+        message: `Schedule conflict: ${conflict.day} ${formatTime12(conflict.startTime)}–${formatTime12(conflict.endTime)} overlaps with ${conflict.subject} · Section ${conflict.section}.`,
+        conflicts: scheduleConflicts,
+      });
+    }
+
+    offering.section = section.trim();
+    offering.schoolYear = schoolYear.trim();
+    offering.term = term.trim();
+    offering.schedule = meetings;
+    await offering.save();
+    await offering.populate('subject', 'name subjectCode department units description');
+
+    const studentIds = await Enrollment.distinct('student', { classOffering: offering._id });
+    const notificationsSent = await notifyClassUpdated({
+      offering,
+      studentIds,
+      eventKey: `class-updated:${offering._id}:${offering.updatedAt.getTime()}`,
+    });
+    return res.json({
+      offering,
+      ...(notificationsSent ? {} : { notificationWarning: 'Class details were saved, but student notifications could not be sent.' }),
+    });
+  } catch (error) {
+    if (error.name === 'ValidationError') return res.status(400).json({ message: error.message });
+    if (error.name === 'CastError') return res.status(404).json({ message: 'Class not found in your active assignments.' });
+    return next(error);
+  }
+}
+
 async function getClassStudents(req, res, next) {
   try {
     const offering = await ClassOffering.findOne({
@@ -356,4 +423,5 @@ module.exports = {
   getDashboard,
   getClassDetails,
   getClassStudents,
+  updateClassDetails,
 };

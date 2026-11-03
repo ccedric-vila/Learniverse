@@ -7,6 +7,7 @@ const {
 	getClassDetails,
 	getClassStudents,
 	getDashboard,
+	updateClassDetails,
 } = require('./professorController');
 const { createQuiz, getProfessorQuizzes } = require('../quizzes/quizController');
 const {
@@ -43,6 +44,7 @@ router.use(protect, authorize('PROFESSOR'));
 router.get('/dashboard', getDashboard);
 router.get('/classes/options', getClassCreationOptions);
 router.post('/classes', createClassOffering);
+router.patch('/classes/:classId', updateClassDetails);
 router.get('/classes/:classId/students', getClassStudents);
 router.get('/classes/:classId/quizzes', getProfessorQuizzes);
 router.post('/classes/:classId/quizzes', createQuiz);

@@ -17,7 +17,7 @@ const quizSchema = new mongoose.Schema({
   questions: {
     type: [quizQuestionSchema],
     required: true,
-    validate: [(questions) => questions.length >= 1 && questions.length <= 20, 'A quiz must contain 1 to 20 questions.'],
+    validate: [(questions) => questions.length === 20, 'A quiz must contain exactly 20 questions.'],
   },
   durationMinutes: { type: Number, default: 10, enum: [10] },
   passingPercent: { type: Number, default: 75, enum: [75] },

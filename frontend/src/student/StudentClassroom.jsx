@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, Download, FileText, FolderOpen, MapPin } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, Download, FileText, FolderOpen, LockKeyhole, MapPin } from 'lucide-react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { api } from '../auth/AuthContext'
 import StudentQuizSection from './StudentQuizSection'
@@ -41,8 +41,9 @@ export default function StudentClassroom() {
   const { classId } = useParams()
   const location = useLocation()
   const [request, setRequest] = useState({ classId: null, offering: null, error: '' })
-  const [activeTab, setActiveTab] = useState('stream')
+  const [activeTab, setActiveTab] = useState(() => location.state?.activeTab || 'stream')
   const [materialsState, setMaterialsState] = useState({ classId: null, materials: [], error: '' })
+  const [quizOutlineState, setQuizOutlineState] = useState({ classId: null, quizzes: [], error: '' })
   const [tasksState, setTasksState] = useState({ classId: null, tasks: [], error: '' })
   const [downloadingId, setDownloadingId] = useState('')
 
@@ -62,6 +63,20 @@ export default function StudentClassroom() {
       .then(({ data }) => { if (active) setMaterialsState({ classId, materials: data.materials, error: '' }) })
       .catch((materialsRequestError) => {
         if (active) setMaterialsState({ classId, materials: [], error: materialsRequestError.response?.data?.message || 'Could not load class materials.' })
+      })
+    return () => { active = false }
+  }, [classId])
+
+  useEffect(() => {
+    let active = true
+    api.get(`/student/classes/${classId}/quizzes`)
+      .then(({ data }) => { if (active) setQuizOutlineState({ classId, quizzes: data.quizzes || [], error: '' }) })
+      .catch((requestError) => {
+        if (active) setQuizOutlineState({
+          classId,
+          quizzes: [],
+          error: requestError.response?.data?.message || 'Could not load topic quiz progress.',
+        })
       })
     return () => { active = false }
   }, [classId])
@@ -89,6 +104,18 @@ export default function StudentClassroom() {
   const materials = materialsState.classId === classId ? materialsState.materials : []
   const materialsError = materialsState.classId === classId ? materialsState.error : ''
   const materialsLoading = materialsState.classId !== classId
+  const outlineQuizzes = quizOutlineState.classId === classId ? quizOutlineState.quizzes : []
+  const outlineQuizzesError = quizOutlineState.classId === classId ? quizOutlineState.error : ''
+  const lessonTopics = materials
+    .filter((material) => (material.category || 'lesson') === 'lesson')
+    .sort((first, second) => (first.sequence || 0) - (second.sequence || 0))
+  const topicProgress = lessonTopics.map((lesson, index) => {
+    const sequence = lesson.sequence || index + 1
+    return { lesson, sequence, quiz: outlineQuizzes.find((entry) => entry.sequence === sequence) }
+  })
+  const passedTopicCount = topicProgress.filter(({ quiz }) => quiz?.passed).length
+  const nextTopic = topicProgress.find(({ quiz }) => !quiz?.passed)
+  const learningProgress = lessonTopics.length ? Math.round((passedTopicCount / lessonTopics.length) * 100) : 0
   const tasks = tasksState.classId === classId ? tasksState.tasks : []
   const tasksError = tasksState.classId === classId ? tasksState.error : ''
   const tasksLoading = tasksState.classId !== classId
@@ -129,11 +156,50 @@ export default function StudentClassroom() {
       {activeTab === 'materials' ? <section className="student-materials-page" role="tabpanel">
         <div className="student-materials-page-heading"><div><span className="student-eyebrow">SHARED BY YOUR PROFESSOR</span><h2>Class materials</h2><p>Files and resources for {offering.subject?.name || 'this class'}.</p></div><span className="student-materials-total">{materialsLoading ? 'Loading…' : `${materials.length} ${materials.length === 1 ? 'file' : 'files'}`}</span></div>
         {materialsError && <p className="student-alert" role="alert">{materialsError}</p>}
-        {materialsLoading ? <div className="student-empty"><FolderOpen size={23} /><strong>Loading class materials…</strong></div> : materials.length === 0 ? <div className="student-empty"><FolderOpen size={24} /><strong>No class materials yet</strong><span>Your professor’s published files will appear here.</span></div> : <div className="student-materials-list">{materials.map((material) => <article className="student-material-row" key={material._id}>
-          <span className="student-material-icon"><FileText size={18} /></span><div className="student-material-copy"><Link to={`/student/classes/${classId}/materials/${material._id}`}>{material.title}</Link><span>{material.originalFileName} · {(material.fileSize / (1024 * 1024)).toFixed(1)} MB</span>{material.description && <small>{material.description}</small>}<div className="student-material-meta"><span className="student-material-category">{(material.category || 'lesson').replace(/\b\w/g, (letter) => letter.toUpperCase())}</span>{material.category !== 'lesson' && <span className="student-material-points">{material.pointsPossible || 100} pts · 70% to pass</span>}{material.deadline && <span className="student-material-deadline">Due {new Date(material.deadline).toLocaleString()}</span>}</div><em>Shared {new Date(material.availableAt).toLocaleDateString()}</em></div>
-          <Link className="student-download-button student-preview-button" to={`/student/classes/${classId}/materials/${material._id}`}>Open material</Link>
-          <button className="student-download-button" type="button" disabled={downloadingId === material._id} onClick={() => downloadMaterial(material._id)}><Download size={14} />{downloadingId === material._id ? 'Preparing…' : 'Download'}</button>
-        </article>)}</div>}
+        <div className="student-materials-layout">
+          <div className="student-materials-main">
+            {materialsLoading ? <div className="student-empty"><FolderOpen size={23} /><strong>Loading class materials…</strong></div> : materials.length === 0 ? <div className="student-empty"><FolderOpen size={24} /><strong>No class materials yet</strong><span>Your professor’s published files will appear here.</span></div> : <div className="student-materials-list">{materials.map((material) => {
+              const locked = material.category === 'lesson' && material.unlocked === false
+              return <article className={`student-material-row${locked ? ' student-material-row-locked' : ''}`} key={material._id}>
+                <span className="student-material-icon">{locked ? <LockKeyhole size={18} /> : <FileText size={18} />}</span><div className="student-material-copy">{locked ? <strong>{material.title}</strong> : <Link to={`/student/classes/${classId}/materials/${material._id}`}>{material.title}</Link>}<span>{material.originalFileName} · {(material.fileSize / (1024 * 1024)).toFixed(1)} MB</span>{material.description && <small>{material.description}</small>}<div className="student-material-meta"><span className="student-material-category">{(material.category || 'lesson').replace(/\b\w/g, (letter) => letter.toUpperCase())}</span>{material.category !== 'lesson' && <span className="student-material-points">{material.pointsPossible || 100} pts · 70% to pass</span>}{material.deadline && <span className="student-material-deadline">Due {new Date(material.deadline).toLocaleString()}</span>}</div>{locked ? <em>Locked · Pass {material.lockedBy} to open this lesson</em> : <em>Shared {new Date(material.availableAt).toLocaleDateString()}</em>}</div>
+                {locked ? <span className="student-download-button student-material-locked-button">Locked</span> : <Link className="student-download-button student-preview-button" to={`/student/classes/${classId}/materials/${material._id}`}>Open material</Link>}
+                <button className="student-download-button" type="button" disabled={locked || downloadingId === material._id} onClick={() => downloadMaterial(material._id)}><Download size={14} />{locked ? 'Locked' : downloadingId === material._id ? 'Preparing…' : 'Download'}</button>
+              </article>
+            })}</div>}
+          </div>
+          <aside className="student-learning-progress" aria-labelledby="student-learning-progress-heading">
+            <div className="student-learning-progress-heading">
+              <span className="student-eyebrow">YOUR PROGRESS</span>
+              <h3 id="student-learning-progress-heading">Learning path</h3>
+              <p>Pass each topic’s quiz to unlock what’s next.</p>
+            </div>
+            {outlineQuizzesError && <p className="student-alert" role="alert">{outlineQuizzesError}</p>}
+            {materialsLoading || quizOutlineState.classId !== classId
+              ? <p className="student-learning-progress-empty">Loading your progress…</p>
+              : lessonTopics.length === 0
+                ? <p className="student-learning-progress-empty">Your progress will appear once lessons are shared.</p>
+                : <>
+                  <div className="student-learning-progress-summary">
+                    <div><strong>{passedTopicCount}<span> / {lessonTopics.length}</span></strong><small>quizzes passed</small></div>
+                    <span className="student-learning-progress-percent">{learningProgress}%</span>
+                  </div>
+                  <div className="student-learning-progress-track" role="progressbar" aria-label="Course quiz progress" aria-valuenow={learningProgress} aria-valuemin={0} aria-valuemax={100}>
+                    <span style={{ width: `${learningProgress}%` }} />
+                  </div>
+                  {nextTopic ? <div className="student-learning-next">
+                    <span className="student-learning-next-label">UP NEXT · TOPIC {nextTopic.sequence}</span>
+                    <strong>{nextTopic.lesson.title}</strong>
+                    {nextTopic.quiz
+                      ? nextTopic.quiz.unlocked
+                        ? <button type="button" onClick={() => setActiveTab('quizzes')}><BookOpen size={14} />{nextTopic.quiz.attempt ? 'Retake quiz' : 'Take quiz'}<ArrowRight size={13} /></button>
+                        : <span className="student-learning-next-locked"><LockKeyhole size={13} />Pass {nextTopic.quiz.lockedBy} to unlock</span>
+                      : nextTopic.lesson.unlocked === false
+                        ? <span className="student-learning-next-locked"><LockKeyhole size={13} />Pass {nextTopic.lesson.lockedBy} to unlock</span>
+                        : <Link to={`/student/classes/${classId}/materials/${nextTopic.lesson._id}`}><FileText size={14} />Open lesson<ArrowRight size={13} /></Link>}
+                  </div> : <div className="student-learning-complete"><CheckCircle2 size={17} /><span><strong>Course path complete</strong><small>You’ve passed every topic quiz.</small></span></div>}
+                </>}
+          </aside>
+        </div>
       </section> : activeTab === 'quizzes' ? <StudentQuizSection classId={classId} /> : activeTab === 'practice' ? <StudentQuizSection classId={classId} practice /> : <>
 
       <section className="student-classroom-content">
@@ -185,10 +251,10 @@ export default function StudentClassroom() {
                   const content = <>
                     <span className="student-class-task-checkbox" role="img" aria-label={`Not completed: ${task.title}`} />
                     <span className="student-class-task-copy"><strong>{task.title}</strong><small>{formatDeadline(task.deadline)}</small></span>
-                    {task.overdue ? <span className="student-class-task-overdue">Overdue</span> : <ArrowRight className="student-class-task-open-icon" size={13} />}
+                    {task.locked ? <span className="student-class-task-locked">Locked · Pass {task.lockedBy}</span> : task.overdue ? <span className="student-class-task-overdue">Overdue</span> : <ArrowRight className="student-class-task-open-icon" size={13} />}
                   </>
                   return task.type === 'quiz'
-                    ? <button className={`student-class-task-item${task.overdue ? ' overdue' : ''}`} type="button" onClick={() => setActiveTab('quizzes')} key={`${task.type}-${task.id}`}>{content}</button>
+                    ? <button className={`student-class-task-item${task.overdue && !task.locked ? ' overdue' : ''}`} type="button" disabled={task.locked} onClick={() => setActiveTab('quizzes')} key={`${task.type}-${task.id}`}>{content}</button>
                     : <Link className={`student-class-task-item${task.overdue ? ' overdue' : ''}`} to={`/student/classes/${classId}/materials/${task.id}`} key={`${task.type}-${task.id}`}>{content}</Link>
                 })}</div> : <p className="student-class-task-empty"><CheckCircle2 size={15} />You’re all caught up in this class.</p>}
               </div>

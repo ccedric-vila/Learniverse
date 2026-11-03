@@ -2,10 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   addQuizProgress,
+  addLessonProgress,
   normalizeQuizDeadline,
   normalizeQuizQuestions,
   publicQuestions,
   quizAttemptExpiresAt,
+  recordQuizScore,
   scoreAnswers,
 } = require('./quizLogic');
 const { createPracticeQuestions } = require('./practiceQuestionGenerator');
@@ -14,29 +16,34 @@ function multipleChoice(prompt, answer = 'A') {
   return { prompt, type: 'multiple_choice', options: ['A', 'B', 'C', 'D'], correctAnswer: answer };
 }
 
-test('quiz validation accepts one to twenty valid mixed question types', () => {
+test('quiz validation requires exactly twenty valid mixed question types', () => {
   const questions = normalizeQuizQuestions([
-    multipleChoice('Select A'),
-    { prompt: 'True?', type: 'true_false', correctAnswer: 'True' },
+    ...Array.from({ length: 10 }, (_, index) => multipleChoice(`Select ${index + 1}`)),
+    ...Array.from({ length: 10 }, (_, index) => ({ prompt: `True ${index + 1}?`, type: 'true_false', correctAnswer: 'True' })),
   ]);
-  assert.equal(questions.length, 2);
-  assert.deepEqual(questions[1].options, ['True', 'False']);
-  assert.throws(() => normalizeQuizQuestions([]), /between 1 and 20/);
-  assert.throws(() => normalizeQuizQuestions(Array.from({ length: 21 }, (_, index) => multipleChoice(`Q${index}`))), /between 1 and 20/);
+  assert.equal(questions.length, 20);
+  assert.deepEqual(questions[10].options, ['True', 'False']);
+  assert.throws(() => normalizeQuizQuestions([]), /exactly 20/);
+  assert.throws(() => normalizeQuizQuestions(Array.from({ length: 19 }, (_, index) => multipleChoice(`Q${index}`))), /exactly 20/);
+  assert.throws(() => normalizeQuizQuestions(Array.from({ length: 21 }, (_, index) => multipleChoice(`Q${index}`))), /exactly 20/);
 });
 
 test('quiz validation rejects malformed options and answer keys', () => {
-  assert.throws(() => normalizeQuizQuestions([{ ...multipleChoice('Q'), options: ['A', 'A', 'C', 'D'] }]), /four distinct/);
-  assert.throws(() => normalizeQuizQuestions([{ ...multipleChoice('Q'), correctAnswer: 'Z' }]), /listed options/);
-  assert.throws(() => normalizeQuizQuestions([{ prompt: 'True?', type: 'true_false', correctAnswer: 'Yes' }]), /True or False/);
+  const validQuestions = Array.from({ length: 20 }, (_, index) => multipleChoice(`Q${index}`));
+  assert.throws(() => normalizeQuizQuestions([{ ...validQuestions[0], options: ['A', 'A', 'C', 'D'] }, ...validQuestions.slice(1)]), /four distinct/);
+  assert.throws(() => normalizeQuizQuestions([{ ...validQuestions[0], correctAnswer: 'Z' }, ...validQuestions.slice(1)]), /listed options/);
+  assert.throws(() => normalizeQuizQuestions([
+    { prompt: 'True?', type: 'true_false', correctAnswer: 'Yes' },
+    ...validQuestions.slice(1),
+  ]), /True or False/);
 });
 
-test('quiz deadlines must be future dates and cap the attempt timer', () => {
+test('quiz deadlines must be future dates but do not cap the attempt timer', () => {
   const now = new Date('2026-01-01T10:00:00.000Z');
   const deadline = normalizeQuizDeadline('2026-01-01T10:05:00.000Z', now);
   assert.throws(() => normalizeQuizDeadline('not-a-date', now), /valid quiz deadline/);
   assert.throws(() => normalizeQuizDeadline('2026-01-01T10:00:00.000Z', now), /future/);
-  assert.equal(quizAttemptExpiresAt(now, deadline).toISOString(), deadline.toISOString());
+  assert.equal(quizAttemptExpiresAt(now, deadline).toISOString(), '2026-01-01T10:10:00.000Z');
   assert.equal(
     quizAttemptExpiresAt(now, new Date('2026-01-01T10:30:00.000Z')).toISOString(),
     '2026-01-01T10:10:00.000Z',
@@ -52,34 +59,72 @@ test('scoring uses a 75 percent passing threshold', () => {
   assert.deepEqual(scoreAnswers(questions, failing), { correctCount: 14, scorePercent: 70, passed: false });
 });
 
-test('question answers stay private until an attempt is submitted', () => {
+test('question answers stay private until the student passes', () => {
   const questions = [multipleChoice('Select A')];
-  assert.equal(Object.hasOwn(publicQuestions(questions)[0], 'correctAnswer'), false);
-  assert.equal(publicQuestions(questions, true, [{ questionIndex: 0, answer: 'B' }])[0].isCorrect, false);
+  const failedReview = publicQuestions(questions, false, [{ questionIndex: 0, answer: 'B' }])[0];
+  assert.equal(Object.hasOwn(failedReview, 'correctAnswer'), false);
+  assert.equal(Object.hasOwn(failedReview, 'answer'), false);
+  const passedReview = publicQuestions(questions, true, [{ questionIndex: 0, answer: 'B' }])[0];
+  assert.equal(passedReview.correctAnswer, 'A');
+  assert.equal(passedReview.isCorrect, false);
 });
 
-test('quizzes unlock in order after the previous attempt is submitted', () => {
+test('late quiz scores are halved while the original pass result is preserved', () => {
+  const score = recordQuizScore({ correctCount: 18, scorePercent: 90, passed: true }, true);
+  assert.deepEqual(score, {
+    correctCount: 18,
+    scorePercent: 45,
+    passed: true,
+    originalCorrectCount: 18,
+    originalScorePercent: 90,
+    latePenaltyApplied: true,
+  });
+});
+
+test('quizzes only unlock in order after the previous quiz is passed', () => {
   const quizzes = [
     { _id: 'quiz-1', title: 'Quiz 1' },
     { _id: 'quiz-2', title: 'Quiz 2' },
     { _id: 'quiz-3', title: 'Quiz 3' },
   ];
-  const activeFirstQuiz = addQuizProgress(quizzes, [
-    { quiz: 'quiz-1', status: 'in_progress' },
+  const failedAttempts = addQuizProgress(quizzes, [
+    { quiz: 'quiz-1', status: 'submitted', passed: false, createdAt: new Date('2026-01-01') },
+    { quiz: 'quiz-1', status: 'submitted', passed: false, createdAt: new Date('2026-01-02') },
   ]);
-  assert.deepEqual(activeFirstQuiz.map(({ unlocked }) => unlocked), [true, false, false]);
-  assert.equal(activeFirstQuiz[1].lockedBy, 'Quiz 1');
+  assert.deepEqual(failedAttempts.map(({ unlocked }) => unlocked), [true, false, false]);
+  assert.equal(failedAttempts[0].attemptCount, 2);
+  assert.equal(failedAttempts[0].attempt.createdAt.toISOString(), '2026-01-02T00:00:00.000Z');
+  assert.equal(failedAttempts[1].lockedBy, 'Quiz 1');
 
-  const firstQuizSubmitted = addQuizProgress(quizzes, [
-    { quiz: 'quiz-1', status: 'submitted' },
+  const firstQuizPassed = addQuizProgress(quizzes, [
+    { quiz: 'quiz-1', status: 'submitted', passed: true },
   ]);
-  assert.deepEqual(firstQuizSubmitted.map(({ unlocked }) => unlocked), [true, true, false]);
+  assert.deepEqual(firstQuizPassed.map(({ unlocked }) => unlocked), [true, true, false]);
 
-  const firstQuizExpired = addQuizProgress(quizzes, [
-    { quiz: 'quiz-1', status: 'expired' },
-    { quiz: 'quiz-2', status: 'submitted' },
+  const secondQuizFailed = addQuizProgress(quizzes, [
+    { quiz: 'quiz-1', status: 'submitted', passed: true },
+    { quiz: 'quiz-2', status: 'expired', passed: false },
   ]);
-  assert.deepEqual(firstQuizExpired.map(({ unlocked }) => unlocked), [true, true, true]);
+  assert.deepEqual(secondQuizFailed.map(({ unlocked }) => unlocked), [true, true, false]);
+});
+
+test('lesson access follows the order of passed quizzes', () => {
+  const lessons = [
+    { _id: 'lesson-2', createdAt: new Date('2026-02-02') },
+    { _id: 'lesson-1', createdAt: new Date('2026-02-01') },
+    { _id: 'lesson-3', createdAt: new Date('2026-02-03') },
+  ];
+  const quizzes = [
+    { _id: 'quiz-1', title: 'Quiz 1' },
+    { _id: 'quiz-2', title: 'Quiz 2' },
+  ];
+  const progress = addLessonProgress(lessons, quizzes, [{ quiz: 'quiz-1', passed: true }]);
+  assert.deepEqual(progress.map(({ _id, unlocked }) => [_id, unlocked]), [
+    ['lesson-1', true],
+    ['lesson-2', true],
+    ['lesson-3', false],
+  ]);
+  assert.equal(progress[2].lockedBy, 'Quiz 2');
 });
 
 test('practice generation creates 10 multiple-choice and 10 true/false questions from lesson text', async () => {

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Save, Users } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Save, Users, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { strToU8, zipSync } from 'fflate'
+import { useNavigate } from 'react-router-dom'
 import * as XLSX from 'xlsx'
 import { api } from '../auth/AuthContext'
 import '../quizzes/quiz.css'
@@ -52,7 +53,7 @@ function getScoreSummary(students, quizzes) {
 function formatScoreCell(attempt) {
   if (!attempt) return 'Not taken'
   if (attempt.status === 'in_progress') return 'In progress'
-  return `${attempt.scorePercent}% (${attempt.correctCount}/${attempt.totalQuestions}) · ${attempt.passed ? 'Passed' : 'Not passed'}`
+  return `Attempt ${attempt.attemptNumber || '—'} · ${attempt.scorePercent}% (${attempt.correctCount}/${attempt.totalQuestions}) · ${attempt.passed ? 'Passed' : 'Not passed'}`
 }
 
 function safeReportFileName(value) {
@@ -275,7 +276,8 @@ function blankTrueFalse() {
   return { prompt: '', correctAnswer: 'True' }
 }
 
-export default function ProfessorQuizManager({ classId, className = 'Class' }) {
+export default function ProfessorQuizManager({ classId, className = 'Class', onDraftStateChange, onDraftDiscardRef }) {
+  const navigate = useNavigate()
   const [quizzes, setQuizzes] = useState([])
   const [students, setStudents] = useState([])
   const [title, setTitle] = useState('')
@@ -286,18 +288,135 @@ export default function ProfessorQuizManager({ classId, className = 'Class' }) {
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
     return now.toISOString().slice(0, 16)
   })
-  const [multipleChoiceCount, setMultipleChoiceCount] = useState(1)
-  const [trueFalseCount, setTrueFalseCount] = useState(1)
-  const [multipleChoiceQuestions, setMultipleChoiceQuestions] = useState([blankMultipleChoice()])
-  const [trueFalseQuestions, setTrueFalseQuestions] = useState([blankTrueFalse()])
+  const [multipleChoiceCount, setMultipleChoiceCount] = useState(10)
+  const [trueFalseCount, setTrueFalseCount] = useState(10)
+  const [multipleChoiceQuestions, setMultipleChoiceQuestions] = useState(() => Array.from({ length: 10 }, blankMultipleChoice))
+  const [trueFalseQuestions, setTrueFalseQuestions] = useState(() => Array.from({ length: 10 }, blankTrueFalse))
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('create')
+  const [draftDirty, setDraftDirty] = useState(false)
+  const [pendingTab, setPendingTab] = useState(null)
+  const [pendingNavigation, setPendingNavigation] = useState(null)
   const [expandedQuizIds, setExpandedQuizIds] = useState(() => new Set())
+  const [previewQuizId, setPreviewQuizId] = useState(null)
+  const [floatingQuizzesOpen, setFloatingQuizzesOpen] = useState(false)
   const [exportSortByQuiz, setExportSortByQuiz] = useState({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const draftDirtyRef = useRef(false)
+  const allowHistoryLeaveRef = useRef(false)
+  const historyGuardRef = useRef(false)
+  const previousHistoryStateRef = useRef(null)
+  const protectedHistoryStateRef = useRef(null)
+  const protectedHistoryUrlRef = useRef('')
   const scoreSummary = useMemo(() => getScoreSummary(students, quizzes), [students, quizzes])
+
+  useEffect(() => {
+    onDraftStateChange(draftDirty)
+  }, [draftDirty, onDraftStateChange])
+
+  useEffect(() => () => onDraftStateChange(false), [onDraftStateChange])
+
+  function markDraftDirty() {
+    draftDirtyRef.current = true
+    setDraftDirty(true)
+  }
+
+  function markDraftClean() {
+    draftDirtyRef.current = false
+    setDraftDirty(false)
+  }
+
+  useEffect(() => {
+    onDraftDiscardRef.current = markDraftClean
+    return () => { onDraftDiscardRef.current = null }
+  }, [onDraftDiscardRef])
+
+  useEffect(() => {
+    if (!draftDirty) return undefined
+    function warnBeforeLeaving(event) {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeLeaving)
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
+  }, [draftDirty])
+
+  useEffect(() => {
+    if (!draftDirty) return undefined
+    const marker = '__quizDraftGuard'
+    if (!historyGuardRef.current) {
+      previousHistoryStateRef.current = window.history.state
+      protectedHistoryStateRef.current = { ...(window.history.state || {}), [marker]: true }
+      protectedHistoryUrlRef.current = window.location.href
+      window.history.pushState(protectedHistoryStateRef.current, '', protectedHistoryUrlRef.current)
+      historyGuardRef.current = true
+    }
+    function guardBrowserBack() {
+      if (allowHistoryLeaveRef.current) {
+        allowHistoryLeaveRef.current = false
+        return
+      }
+      if (!draftDirtyRef.current) return
+      window.history.pushState(protectedHistoryStateRef.current, '', protectedHistoryUrlRef.current)
+      setPendingNavigation({ type: 'history' })
+    }
+    window.addEventListener('popstate', guardBrowserBack)
+    return () => {
+      window.removeEventListener('popstate', guardBrowserBack)
+      if (!draftDirtyRef.current && historyGuardRef.current) {
+        if (window.history.state?.[marker]) window.history.replaceState(previousHistoryStateRef.current, '', window.location.href)
+        historyGuardRef.current = false
+      }
+    }
+  }, [draftDirty])
+
+  useEffect(() => {
+    if (!draftDirty) return undefined
+    function guardInternalNavigation(event) {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      const link = event.target.closest('a[href]')
+      if (!link || link.target === '_blank' || link.hasAttribute('download')) return
+      const destination = new URL(link.href, window.location.href)
+      if (destination.origin !== window.location.origin) return
+      event.preventDefault()
+      event.stopPropagation()
+      setPendingNavigation({ type: 'route', to: `${destination.pathname}${destination.search}${destination.hash}` })
+    }
+    document.addEventListener('click', guardInternalNavigation, true)
+    return () => document.removeEventListener('click', guardInternalNavigation, true)
+  }, [draftDirty])
+
+  function requestQuizTabChange(nextTab) {
+    if (nextTab === activeTab) return
+    if (draftDirty) {
+      setPendingTab(nextTab)
+      return
+    }
+    setActiveTab(nextTab)
+  }
+
+  function confirmDiscardDraft() {
+    const nextTab = pendingTab
+    const nextNavigation = pendingNavigation
+    setTitle('')
+    setDescription('')
+    setDeadline('')
+    setMultipleChoiceCount(10)
+    setTrueFalseCount(10)
+    setMultipleChoiceQuestions(Array.from({ length: 10 }, blankMultipleChoice))
+    setTrueFalseQuestions(Array.from({ length: 10 }, blankTrueFalse))
+    markDraftClean()
+    if (nextTab) setActiveTab(nextTab)
+    setPendingTab(null)
+    setPendingNavigation(null)
+    if (nextNavigation?.type === 'route') navigate(nextNavigation.to, { replace: true })
+    if (nextNavigation?.type === 'history') {
+      allowHistoryLeaveRef.current = true
+      window.history.go(-2)
+    }
+  }
 
   async function loadQuizzes() {
     try {
@@ -325,20 +444,55 @@ export default function ProfessorQuizManager({ classId, className = 'Class' }) {
     return () => { active = false }
   }, [classId])
 
+  function openQuizPreview(quizId) {
+    setPreviewQuizId(quizId)
+    setActiveTab('published')
+    setFloatingQuizzesOpen(false)
+  }
+
+  useEffect(() => {
+    if (!previewQuizId) return undefined
+    function closeOnEscape(event) {
+      if (event.key === 'Escape') setPreviewQuizId(null)
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [previewQuizId])
+
+  useEffect(() => {
+    if (!pendingTab && !pendingNavigation) return undefined
+    function closeOnEscape(event) {
+      if (event.key === 'Escape') {
+        setPendingTab(null)
+        setPendingNavigation(null)
+      }
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [pendingTab, pendingNavigation])
+
+  const previewQuiz = quizzes.find((quiz) => quiz.id === previewQuizId)
+
   function resizeQuestions(type, count) {
     const nextCount = Math.max(0, Math.min(20, Number(count) || 0))
+    markDraftDirty()
     if (type === 'multiple_choice') {
-      const allowed = Math.min(nextCount, 20 - trueFalseCount)
-      setMultipleChoiceCount(allowed)
-      setMultipleChoiceQuestions((current) => Array.from({ length: allowed }, (_, index) => current[index] || blankMultipleChoice()))
+      const trueFalseTotal = 20 - nextCount
+      setMultipleChoiceCount(nextCount)
+      setTrueFalseCount(trueFalseTotal)
+      setMultipleChoiceQuestions((current) => Array.from({ length: nextCount }, (_, index) => current[index] || blankMultipleChoice()))
+      setTrueFalseQuestions((current) => Array.from({ length: trueFalseTotal }, (_, index) => current[index] || blankTrueFalse()))
       return
     }
-    const allowed = Math.min(nextCount, 20 - multipleChoiceCount)
-    setTrueFalseCount(allowed)
-    setTrueFalseQuestions((current) => Array.from({ length: allowed }, (_, index) => current[index] || blankTrueFalse()))
+    const multipleChoiceTotal = 20 - nextCount
+    setTrueFalseCount(nextCount)
+    setMultipleChoiceCount(multipleChoiceTotal)
+    setTrueFalseQuestions((current) => Array.from({ length: nextCount }, (_, index) => current[index] || blankTrueFalse()))
+    setMultipleChoiceQuestions((current) => Array.from({ length: multipleChoiceTotal }, (_, index) => current[index] || blankMultipleChoice()))
   }
 
   function updateMultipleChoice(index, field, value, optionIndex) {
+    markDraftDirty()
     setMultipleChoiceQuestions((current) => current.map((question, questionIndex) => {
       if (questionIndex !== index) return question
       if (field === 'option') {
@@ -396,8 +550,8 @@ export default function ProfessorQuizManager({ classId, className = 'Class' }) {
         type: 'true_false',
       })),
     ]
-    if (!questions.length || questions.length > 20) {
-      setError('Choose between 1 and 20 total questions.')
+    if (questions.length !== 20) {
+      setError('A quiz must contain exactly 20 questions.')
       return
     }
     if (!deadline || !Number.isFinite(new Date(deadline).getTime()) || new Date(deadline).getTime() <= Date.now()) {
@@ -410,10 +564,11 @@ export default function ProfessorQuizManager({ classId, className = 'Class' }) {
       setTitle('')
       setDescription('')
       setDeadline('')
-      setMultipleChoiceCount(1)
-      setTrueFalseCount(1)
-      setMultipleChoiceQuestions([blankMultipleChoice()])
-      setTrueFalseQuestions([blankTrueFalse()])
+      setMultipleChoiceCount(10)
+      setTrueFalseCount(10)
+      setMultipleChoiceQuestions(Array.from({ length: 10 }, blankMultipleChoice))
+      setTrueFalseQuestions(Array.from({ length: 10 }, blankTrueFalse))
+      markDraftClean()
       setNotice(data.notificationWarning || 'Quiz published. Students in this class can now take it.')
       await loadQuizzes()
       setActiveTab('published')
@@ -427,29 +582,62 @@ export default function ProfessorQuizManager({ classId, className = 'Class' }) {
   return (
     <section className="quiz-panel professor-quiz-panel">
       <header className="quiz-panel-heading">
-        <div><span className="professor-eyebrow">ASSESSMENTS</span><h2>Class quizzes</h2><p>Students unlock quizzes in the order you publish them, after submitting the previous quiz.</p></div>
+        <div><span className="professor-eyebrow">ASSESSMENTS</span><h2>Class quizzes</h2><p>Each quiz has 20 questions. Students need at least 15 correct answers to pass and unlock the next quiz.</p></div>
         <span className="quiz-panel-icon"><ClipboardList size={20} /></span>
       </header>
       {error && <p className="quiz-message error" role="alert">{error}</p>}
       {notice && <p className="quiz-message success" role="status">{notice}</p>}
 
+      {quizzes.length > 0 && (
+        <aside className="quiz-floating-library">
+          {floatingQuizzesOpen && (
+            <div id="quiz-floating-library-list" className="quiz-floating-library-popover" role="region" aria-label="Created quizzes">
+              <div className="quiz-floating-library-heading">
+                <div><strong>Your quizzes</strong><span>Select one to view its questions and answers.</span></div>
+                <button type="button" aria-label="Close created quizzes" onClick={() => setFloatingQuizzesOpen(false)}><X size={16} /></button>
+              </div>
+              <div className="quiz-floating-library-list">
+                {quizzes.map((quiz, index) => (
+                  <button className="quiz-floating-library-item" type="button" key={quiz.id} onClick={() => openQuizPreview(quiz.id)}>
+                    <span className="quiz-floating-library-index">{index + 1}</span>
+                    <span className="quiz-floating-library-item-copy"><strong>{quiz.title}</strong><small>{quiz.questionCount} questions{quiz.deadline ? ` · Due ${new Date(quiz.deadline).toLocaleDateString()}` : ''}</small></span>
+                    <ChevronDown size={15} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <button
+            className="quiz-floating-library-trigger"
+            type="button"
+            aria-expanded={floatingQuizzesOpen}
+            aria-controls="quiz-floating-library-list"
+            onClick={() => setFloatingQuizzesOpen((open) => !open)}
+          >
+            {floatingQuizzesOpen ? <X size={17} /> : <BookOpen size={17} />}
+            <span>My quizzes</span>
+            <span className="quiz-floating-library-count">{quizzes.length}</span>
+          </button>
+        </aside>
+      )}
+
       <div className="quiz-tabs" role="tablist" aria-label="Quiz management">
-        <button id="quiz-create-tab" className={`quiz-tab${activeTab === 'create' ? ' active' : ''}`} type="button" role="tab" aria-selected={activeTab === 'create'} aria-controls="quiz-create-panel" onClick={() => setActiveTab('create')}>Create quiz</button>
-        <button id="quiz-published-tab" className={`quiz-tab${activeTab === 'published' ? ' active' : ''}`} type="button" role="tab" aria-selected={activeTab === 'published'} aria-controls="quiz-published-panel" onClick={() => setActiveTab('published')}>Published quizzes <span>{quizzes.length}</span></button>
-        <button id="quiz-score-summary-tab" className={`quiz-tab${activeTab === 'summary' ? ' active' : ''}`} type="button" role="tab" aria-selected={activeTab === 'summary'} aria-controls="quiz-score-summary-panel" onClick={() => setActiveTab('summary')}>Score summary</button>
+        <button id="quiz-create-tab" className={`quiz-tab${activeTab === 'create' ? ' active' : ''}`} type="button" role="tab" aria-selected={activeTab === 'create'} aria-controls="quiz-create-panel" onClick={() => requestQuizTabChange('create')}>Create quiz</button>
+        <button id="quiz-published-tab" className={`quiz-tab${activeTab === 'published' ? ' active' : ''}`} type="button" role="tab" aria-selected={activeTab === 'published'} aria-controls="quiz-published-panel" onClick={() => requestQuizTabChange('published')}>Published quizzes <span>{quizzes.length}</span></button>
+        <button id="quiz-score-summary-tab" className={`quiz-tab${activeTab === 'summary' ? ' active' : ''}`} type="button" role="tab" aria-selected={activeTab === 'summary'} aria-controls="quiz-score-summary-panel" onClick={() => requestQuizTabChange('summary')}>Score summary</button>
       </div>
 
       {activeTab === 'create' ? (
       <div id="quiz-create-panel" role="tabpanel" aria-labelledby="quiz-create-tab">
       <form className="quiz-builder" onSubmit={submitQuiz}>
-        <label className="quiz-field"><span>Quiz title <b>*</b></span><input required maxLength={160} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Introduction quiz" /></label>
-        <label className="quiz-field"><span>Instructions <small>Optional</small></span><textarea rows={2} maxLength={2000} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Instructions for students" /></label>
-        <label className="quiz-field"><span>Deadline <b>*</b></span><input type="datetime-local" required min={minimumDeadline} value={deadline} onChange={(event) => setDeadline(event.target.value)} /><small>Students must finish the quiz before this date and time.</small></label>
+        <label className="quiz-field"><span>Quiz title <b>*</b></span><input required maxLength={160} value={title} onChange={(event) => { setTitle(event.target.value); markDraftDirty() }} placeholder="e.g. Introduction quiz" /></label>
+        <label className="quiz-field"><span>Instructions <small>Optional</small></span><textarea rows={2} maxLength={2000} value={description} onChange={(event) => { setDescription(event.target.value); markDraftDirty() }} placeholder="Instructions for students" /></label>
+        <label className="quiz-field"><span>Deadline <b>*</b></span><input type="datetime-local" required min={minimumDeadline} value={deadline} onChange={(event) => { setDeadline(event.target.value); markDraftDirty() }} /><small>Students may retake quizzes after the deadline, but their recorded score is halved.</small></label>
         <div className="quiz-count-grid">
-          <label className="quiz-field"><span>Multiple-choice questions</span><input type="number" min="0" max={20 - trueFalseCount} value={multipleChoiceCount} onChange={(event) => resizeQuestions('multiple_choice', event.target.value)} /></label>
-          <label className="quiz-field"><span>True/false questions</span><input type="number" min="0" max={20 - multipleChoiceCount} value={trueFalseCount} onChange={(event) => resizeQuestions('true_false', event.target.value)} /></label>
+          <label className="quiz-field"><span>Multiple-choice questions</span><input type="number" min="0" max="20" value={multipleChoiceCount} onChange={(event) => resizeQuestions('multiple_choice', event.target.value)} /></label>
+          <label className="quiz-field"><span>True/false questions</span><input type="number" min="0" max="20" value={trueFalseCount} onChange={(event) => resizeQuestions('true_false', event.target.value)} /></label>
         </div>
-        <p className="quiz-rule-note">{multipleChoiceCount + trueFalseCount} of 20 maximum questions · 10 minutes · 75% to pass</p>
+        <p className="quiz-rule-note">{multipleChoiceCount + trueFalseCount} of 20 required questions · 10 minutes · at least 15 correct to pass</p>
 
         {multipleChoiceQuestions.slice(0, multipleChoiceCount).map((question, index) => (
           <fieldset className="quiz-question-editor" key={`mc-${index}`}>
@@ -463,12 +651,12 @@ export default function ProfessorQuizManager({ classId, className = 'Class' }) {
         {trueFalseQuestions.slice(0, trueFalseCount).map((question, index) => (
           <fieldset className="quiz-question-editor" key={`tf-${index}`}>
             <legend>True or false · Question {index + 1}</legend>
-            <label className="quiz-field"><span>Statement <b>*</b></span><textarea required maxLength={1000} rows={2} value={question.prompt} onChange={(event) => setTrueFalseQuestions((current) => current.map((item, questionIndex) => questionIndex === index ? { ...item, prompt: event.target.value } : item))} /></label>
-            <label className="quiz-field"><span>Correct answer <b>*</b></span><select value={question.correctAnswer} onChange={(event) => setTrueFalseQuestions((current) => current.map((item, questionIndex) => questionIndex === index ? { ...item, correctAnswer: event.target.value } : item))}><option>True</option><option>False</option></select></label>
+            <label className="quiz-field"><span>Statement <b>*</b></span><textarea required maxLength={1000} rows={2} value={question.prompt} onChange={(event) => { setTrueFalseQuestions((current) => current.map((item, questionIndex) => questionIndex === index ? { ...item, prompt: event.target.value } : item)); markDraftDirty() }} /></label>
+            <label className="quiz-field"><span>Correct answer <b>*</b></span><select value={question.correctAnswer} onChange={(event) => { setTrueFalseQuestions((current) => current.map((item, questionIndex) => questionIndex === index ? { ...item, correctAnswer: event.target.value } : item)); markDraftDirty() }}><option>True</option><option>False</option></select></label>
           </fieldset>
         ))}
 
-        <button className="quiz-primary-button" type="submit" disabled={saving || multipleChoiceCount + trueFalseCount === 0}>
+        <button className="quiz-primary-button" type="submit" disabled={saving || multipleChoiceCount + trueFalseCount !== 20}>
           <Save size={15} />{saving ? 'Publishing quiz…' : 'Publish quiz'}
         </button>
       </form>
@@ -508,10 +696,12 @@ export default function ProfessorQuizManager({ classId, className = 'Class' }) {
       <div id="quiz-published-panel" className="quiz-existing-list" role="tabpanel" aria-labelledby="quiz-published-tab">
         <div className="quiz-published-heading"><h3>Published quizzes</h3><p>Review submissions, compare scores, or export a class summary.</p></div>
         {loading ? <p className="quiz-empty">Loading quizzes…</p> : quizzes.length === 0 ? <p className="quiz-empty">No quizzes have been created for this class.</p> : quizzes.map((quiz) => (
-          <article className={`quiz-existing-card${expandedQuizIds.has(quiz.id) ? ' expanded' : ''}`} key={quiz.id}>
+          <article id={`quiz-card-${quiz.id}`} className={`quiz-existing-card${expandedQuizIds.has(quiz.id) ? ' expanded' : ''}`} key={quiz.id}>
             <div className="quiz-existing-card-header">
               <div className="quiz-existing-summary">
-                <strong>{quiz.title}</strong>
+                <button className="quiz-preview-open" type="button" onClick={() => openQuizPreview(quiz.id)} aria-haspopup="dialog">
+                  <strong>{quiz.title}</strong>
+                </button>
                 <div className="quiz-card-details">
                   <span>{quiz.questionCount} questions</span>
                   <span>{quiz.multipleChoiceCount} multiple choice</span>
@@ -558,7 +748,7 @@ export default function ProfessorQuizManager({ classId, className = 'Class' }) {
                 <div className="quiz-result-row quiz-result-heading" aria-hidden="true"><span>Student</span><span>Score</span><span>Submitted</span></div>
                 {sortAttempts(quiz.attempts, exportSortByQuiz[quiz.id] || 'name').map((attempt) => (
                   <div className="quiz-result-row" key={attempt.id}>
-                    <span>{attempt.student?.fullName || 'Student'}</span>
+                    <span>{attempt.student?.fullName || 'Student'}<small>Attempt {attempt.attemptNumber || '—'}{attempt.latePenaltyApplied ? ' · 50% late penalty' : ''}</small></span>
                     <span className="quiz-result-score">{attempt.correctCount}/{attempt.totalQuestions} · {attempt.scorePercent}% <span className={attempt.passed ? 'quiz-pass' : 'quiz-fail'}><CheckCircle2 size={13} />{attempt.passed ? 'Passed' : 'Not passed'}</span></span>
                     <time dateTime={attempt.submittedAt}>{attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : '—'}</time>
                   </div>
@@ -570,6 +760,61 @@ export default function ProfessorQuizManager({ classId, className = 'Class' }) {
           </article>
         ))}
       </div>
+      )}
+      {previewQuiz && (
+        <div
+          className="quiz-preview-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPreviewQuizId(null)
+          }}
+        >
+          <section className="quiz-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="quiz-preview-title">
+            <header className="quiz-preview-dialog-header">
+              <div>
+                <span>QUIZ CONTENT</span>
+                <h3 id="quiz-preview-title">{previewQuiz.title}</h3>
+                <p>{previewQuiz.description || 'Questions and correct answers'} · {previewQuiz.questionCount} questions</p>
+              </div>
+              <button type="button" aria-label="Close quiz preview" onClick={() => setPreviewQuizId(null)}><X size={19} /></button>
+            </header>
+            <div className="quiz-preview-dialog-content">
+              {previewQuiz.questions?.map((question, index) => (
+                <article className="quiz-preview-question" key={`${previewQuiz.id}-question-${index}`}>
+                  <div className="quiz-preview-question-prompt"><span>{index + 1}</span><strong>{question.prompt}</strong></div>
+                  <div className="quiz-preview-question-options">
+                    {question.options.map((option) => (
+                      <span className={option === question.correctAnswer ? 'correct' : ''} key={option}>
+                        {option}{option === question.correctAnswer && <CheckCircle2 size={14} />}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="quiz-preview-correct-answer"><CheckCircle2 size={15} /><span>Correct answer</span><strong>{question.correctAnswer}</strong></div>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+      {(pendingTab || pendingNavigation) && (
+        <div
+          className="quiz-draft-confirmation-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setPendingTab(null)
+              setPendingNavigation(null)
+            }
+          }}
+        >
+          <section className="quiz-draft-confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="quiz-draft-confirmation-title" aria-describedby="quiz-draft-confirmation-description">
+            <span className="quiz-draft-confirmation-icon"><AlertTriangle size={21} /></span>
+            <h3 id="quiz-draft-confirmation-title">Leave quiz creation?</h3>
+            <p id="quiz-draft-confirmation-description">Your quiz draft has not been published. If you leave now, the information and questions you entered will be lost and cannot be recovered.</p>
+            <div className="quiz-draft-confirmation-actions">
+              <button type="button" className="quiz-draft-stay-button" autoFocus onClick={() => { setPendingTab(null); setPendingNavigation(null) }}>Stay and keep editing</button>
+              <button type="button" className="quiz-draft-leave-button" onClick={confirmDiscardDraft}>Leave and discard draft</button>
+            </div>
+          </section>
+        </div>
       )}
     </section>
   )

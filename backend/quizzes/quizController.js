@@ -16,8 +16,10 @@ const {
   normalizeQuizQuestions,
   publicQuestions,
   quizAttemptExpiresAt,
+  recordQuizScore,
   scoreAnswers,
 } = require('./quizLogic');
+const { getStudentLessonProgress, getStudentQuizGate } = require('./studentLessonProgress');
 
 function httpError(status, message) {
   const error = new Error(message);
@@ -26,10 +28,12 @@ function httpError(status, message) {
 }
 
 function attemptResponse(attempt) {
-  const revealAnswers = attempt.status !== 'in_progress';
+  const revealAnswers = attempt.status !== 'in_progress' && attempt.passed === true;
   return {
     id: attempt._id,
+    quizId: attempt.quiz,
     attemptType: attempt.attemptType,
+    attemptNumber: attempt.attemptNumber,
     title: attempt.title,
     questions: publicQuestions(attempt.questions, revealAnswers, attempt.answers),
     answers: attempt.answers.map(({ questionIndex, answer }) => ({ questionIndex, answer })),
@@ -40,6 +44,9 @@ function attemptResponse(attempt) {
     correctCount: attempt.correctCount,
     totalQuestions: attempt.questions.length,
     scorePercent: attempt.scorePercent,
+    originalCorrectCount: attempt.originalCorrectCount,
+    originalScorePercent: attempt.originalScorePercent,
+    latePenaltyApplied: attempt.latePenaltyApplied,
     passed: attempt.passed,
     practiceAttemptNumber: attempt.practiceAttemptNumber,
   };
@@ -58,6 +65,17 @@ async function enrolledStudentClass(classId, studentId) {
   ]);
   if (!offering || !enrollment) throw httpError(404, 'Class not found in your active enrollments.');
   return offering;
+}
+
+async function ensureAttemptQuizUnlocked(attempt, studentId) {
+  if (attempt.attemptType !== 'quiz') return;
+  const quiz = await Quiz.findById(attempt.quiz).select('classOffering');
+  if (!quiz) throw httpError(404, 'Quiz not found.');
+  await enrolledStudentClass(quiz.classOffering, studentId);
+  const gate = await getStudentQuizGate(quiz.classOffering, quiz._id, studentId);
+  if (!gate.unlocked) {
+    throw httpError(403, `Pass "${gate.lockedBy || 'the previous quiz'}" before opening this quiz.`);
+  }
 }
 
 async function createQuiz(req, res, next) {
@@ -145,6 +163,10 @@ async function getProfessorQuizzes(req, res, next) {
         correctCount: attempt.correctCount,
         totalQuestions: attempt.questions.length,
         scorePercent: attempt.scorePercent,
+        originalCorrectCount: attempt.originalCorrectCount,
+        originalScorePercent: attempt.originalScorePercent,
+        latePenaltyApplied: attempt.latePenaltyApplied,
+        attemptNumber: attempt.attemptNumber,
         passed: attempt.passed,
         status: attempt.status,
       };
@@ -176,6 +198,12 @@ async function getProfessorQuizzes(req, res, next) {
         questionCount: quiz.questions.length,
         multipleChoiceCount: quiz.questions.filter((question) => question.type === 'multiple_choice').length,
         trueFalseCount: quiz.questions.filter((question) => question.type === 'true_false').length,
+        questions: quiz.questions.map((question) => ({
+          prompt: question.prompt,
+          type: question.type,
+          options: question.options,
+          correctAnswer: question.correctAnswer,
+        })),
         durationMinutes: quiz.durationMinutes,
         passingPercent: quiz.passingPercent,
         deadline: quiz.deadline,
@@ -200,11 +228,9 @@ async function getStudentQuizzes(req, res, next) {
       quiz: { $in: quizzes.map((quiz) => quiz._id) },
       attemptType: 'quiz',
     });
-    const quizzesById = new Map(quizzes.map((quiz) => [String(quiz._id), quiz]));
     const now = new Date();
     for (const attempt of attempts) {
-      const deadline = quizzesById.get(String(attempt.quiz))?.deadline;
-      if (attempt.status === 'in_progress' && (attempt.expiresAt <= now || (deadline && deadline <= now))) {
+      if (attempt.status === 'in_progress' && attempt.expiresAt <= now) {
         await finalizeAttempt(attempt, true);
       }
     }
@@ -223,7 +249,9 @@ async function getStudentQuizzes(req, res, next) {
           sequence: quiz.sequence,
           unlocked: quiz.unlocked,
           lockedBy: quiz.lockedBy,
-          attempt: quiz.attempt ? attemptResponse(quiz.attempt) : null,
+          passed: quiz.passed,
+          attemptCount: quiz.attemptCount,
+          attempt: quiz.unlocked && quiz.attempt ? attemptResponse(quiz.attempt) : null,
         };
       }),
     });
@@ -239,63 +267,56 @@ async function startQuizAttempt(req, res, next) {
     const quiz = await Quiz.findOne({ _id: req.params.quizId, isPublished: true });
     if (!quiz) return res.status(404).json({ message: 'Published quiz not found.' });
     await enrolledStudentClass(quiz.classOffering, req.user._id);
-    const existing = await QuizAttempt.findOne({ student: req.user._id, quiz: quiz._id, attemptType: 'quiz' });
-    const now = new Date();
-    if (quiz.deadline && quiz.deadline <= now) {
-      if (existing?.status === 'in_progress') await finalizeAttempt(existing, true);
-      return res.status(409).json({ message: 'The deadline for this quiz has passed.' });
-    }
-    if (existing) {
-      if (existing.status === 'in_progress') return res.json({ attempt: attemptResponse(existing), resumed: true });
-      return res.status(409).json({ message: 'You have already used your attempt for this quiz.', attempt: attemptResponse(existing) });
-    }
-
-    const orderedQuizzes = await Quiz.find({ classOffering: quiz.classOffering, isPublished: true })
-      .sort({ createdAt: 1, _id: 1 })
-      .select('_id title')
-      .lean();
-    const quizIndex = orderedQuizzes.findIndex((item) => String(item._id) === String(quiz._id));
-    const previousQuizzes = orderedQuizzes.slice(0, quizIndex);
-    if (previousQuizzes.length) {
-      const previousAttempts = await QuizAttempt.find({
-        student: req.user._id,
-        quiz: { $in: previousQuizzes.map((item) => item._id) },
-        attemptType: 'quiz',
+    const gate = await getStudentQuizGate(quiz.classOffering, quiz._id, req.user._id);
+    if (!gate.unlocked) {
+      return res.status(409).json({
+        message: `Pass "${gate.lockedBy || 'the previous quiz'}" before starting the next quiz.`,
+        lockedBy: gate.lockedBy,
       });
-      const attemptsByQuiz = new Map(previousAttempts.map((attempt) => [String(attempt.quiz), attempt]));
-      for (const previousQuiz of previousQuizzes) {
-        const previousAttempt = attemptsByQuiz.get(String(previousQuiz._id));
-        if (previousAttempt?.status === 'in_progress' && previousAttempt.expiresAt <= new Date()) {
-          await finalizeAttempt(previousAttempt, true);
-        }
-        if (!previousAttempt || previousAttempt.status === 'in_progress') {
-          return res.status(409).json({
-            message: `Complete "${previousQuiz.title}" before starting the next quiz.`,
-            lockedBy: previousQuiz.title,
-          });
-        }
-      }
+    }
+    const now = new Date();
+    const existing = await QuizAttempt.findOne({ student: req.user._id, quiz: quiz._id, attemptType: 'quiz' })
+      .sort({ createdAt: -1 });
+    if (existing?.status === 'in_progress' && existing.expiresAt > now) {
+      return res.json({ attempt: attemptResponse(existing), resumed: true });
+    }
+    if (existing?.status === 'in_progress') await finalizeAttempt(existing, true);
+    if (existing?.passed === true) {
+      return res.status(409).json({ message: 'You have already passed this quiz.', attempt: attemptResponse(existing) });
     }
 
     const startedAt = new Date();
-    if (quiz.deadline && quiz.deadline <= startedAt) {
-      return res.status(409).json({ message: 'The deadline for this quiz has passed.' });
-    }
+    const attemptNumber = await QuizAttempt.countDocuments({
+      student: req.user._id,
+      quiz: quiz._id,
+      attemptType: 'quiz',
+    }) + 1;
     const attempt = await QuizAttempt.create({
       student: req.user._id,
       attemptType: 'quiz',
+      attemptNumber,
       quiz: quiz._id,
       title: quiz.title,
       questions: quiz.questions.map((question) => question.toObject()),
       answers: quiz.questions.map((_question, questionIndex) => ({ questionIndex, answer: '' })),
       startedAt,
-      expiresAt: quizAttemptExpiresAt(startedAt, quiz.deadline),
+      expiresAt: quizAttemptExpiresAt(startedAt),
     });
     return res.status(201).json({ attempt: attemptResponse(attempt), resumed: false });
   } catch (error) {
     if (error.code === 11000) {
-      const existing = await QuizAttempt.findOne({ student: req.user._id, quiz: req.params.quizId, attemptType: 'quiz' });
+      const existing = await QuizAttempt.findOne({
+        student: req.user._id,
+        quiz: req.params.quizId,
+        attemptType: 'quiz',
+        status: 'in_progress',
+      }).sort({ createdAt: -1 });
       if (existing) return res.json({ attempt: attemptResponse(existing), resumed: true });
+      if (error.keyPattern?.student && error.keyPattern?.quiz) {
+        return res.status(503).json({
+          message: 'Quiz retakes are not enabled in the database yet. Run "npm run quizzes:migrate-retakes" from the backend directory, then try again.',
+        });
+      }
     }
     if (error.name === 'CastError') return res.status(404).json({ message: 'Quiz or class not found.' });
     if (error.status) return res.status(error.status).json({ message: error.message });
@@ -325,6 +346,8 @@ async function getStudentPracticeMaterials(req, res, next) {
       category: 'lesson',
       availableAt: { $lte: new Date() },
     }).select('title description originalFileName mimeType fileSize availableAt createdAt').sort({ createdAt: -1 }).lean();
+    const lessonProgress = await getStudentLessonProgress(offering._id, req.user._id);
+    const progressById = new Map(lessonProgress.map((material) => [String(material._id), material]));
     const progress = await PracticeProgress.find({
       student: req.user._id,
       material: { $in: materials.map((material) => material._id) },
@@ -333,6 +356,9 @@ async function getStudentPracticeMaterials(req, res, next) {
     return res.json({
       materials: materials.map((material) => ({
         ...material,
+        sequence: progressById.get(String(material._id))?.sequence,
+        unlocked: progressById.get(String(material._id))?.unlocked ?? true,
+        lockedBy: progressById.get(String(material._id))?.lockedBy || null,
         attemptsUsed: attemptsByMaterial.get(String(material._id)) || 0,
         attemptsRemaining: 3 - (attemptsByMaterial.get(String(material._id)) || 0),
       })),
@@ -353,6 +379,11 @@ async function startPracticeAttempt(req, res, next) {
     }).select('+cloudinaryPublicId');
     if (!material) return res.status(404).json({ message: 'Available lesson material not found.' });
     await enrolledStudentClass(material.classOffering, req.user._id);
+    const lessonProgress = await getStudentLessonProgress(material.classOffering, req.user._id);
+    const lesson = lessonProgress.find((entry) => String(entry._id) === String(material._id));
+    if (!lesson?.unlocked) {
+      return res.status(403).json({ message: `Pass "${lesson?.lockedBy || 'the previous quiz'}" before opening this lesson.` });
+    }
 
     const currentProgress = await PracticeProgress.findOne({ student: req.user._id, material: material._id }).select('attemptsUsed').lean();
     if ((currentProgress?.attemptsUsed || 0) >= 3) {
@@ -407,12 +438,14 @@ async function getAttempt(req, res, next) {
   try {
     const attempt = await QuizAttempt.findOne({ _id: req.params.attemptId, student: req.user._id });
     if (!attempt) return res.status(404).json({ message: 'Quiz attempt not found.' });
+    await ensureAttemptQuizUnlocked(attempt, req.user._id);
     if (attempt.status === 'in_progress' && attempt.expiresAt <= new Date()) {
       await finalizeAttempt(attempt, true);
     }
     return res.json({ attempt: attemptResponse(attempt) });
   } catch (error) {
     if (error.name === 'CastError') return res.status(404).json({ message: 'Quiz attempt not found.' });
+    if (error.status) return res.status(error.status).json({ message: error.message });
     return next(error);
   }
 }
@@ -424,6 +457,7 @@ async function saveAttemptAnswer(req, res, next) {
     if (typeof req.body.answer !== 'string' || req.body.answer.length > 300) return res.status(400).json({ message: 'Choose a valid answer.' });
     const attempt = await QuizAttempt.findOne({ _id: req.params.attemptId, student: req.user._id });
     if (!attempt) return res.status(404).json({ message: 'Quiz attempt not found.' });
+    await ensureAttemptQuizUnlocked(attempt, req.user._id);
     if (attempt.status !== 'in_progress') return res.status(409).json({ message: 'This attempt has already been submitted.' });
     if (attempt.expiresAt <= new Date()) {
       await finalizeAttempt(attempt, true);
@@ -442,6 +476,7 @@ async function saveAttemptAnswer(req, res, next) {
     return res.json({ saved: true });
   } catch (error) {
     if (error.name === 'CastError') return res.status(404).json({ message: 'Quiz attempt not found.' });
+    if (error.status) return res.status(error.status).json({ message: error.message });
     return next(error);
   }
 }
@@ -449,10 +484,19 @@ async function saveAttemptAnswer(req, res, next) {
 async function finalizeAttempt(attempt, expired = false) {
   if (attempt.status !== 'in_progress') return attempt;
   const result = scoreAnswers(attempt.questions, attempt.answers);
+  const submittedAt = new Date();
+  const quiz = attempt.attemptType === 'quiz'
+    ? await Quiz.findById(attempt.quiz).select('deadline').lean()
+    : null;
+  const latePenaltyApplied = Boolean(quiz?.deadline && submittedAt > quiz.deadline);
+  const recordedScore = recordQuizScore(result, latePenaltyApplied);
   attempt.status = expired ? 'expired' : 'submitted';
-  attempt.submittedAt = new Date();
-  attempt.correctCount = result.correctCount;
-  attempt.scorePercent = result.scorePercent;
+  attempt.submittedAt = submittedAt;
+  attempt.originalCorrectCount = recordedScore.originalCorrectCount;
+  attempt.originalScorePercent = recordedScore.originalScorePercent;
+  attempt.latePenaltyApplied = recordedScore.latePenaltyApplied;
+  attempt.correctCount = recordedScore.correctCount;
+  attempt.scorePercent = recordedScore.scorePercent;
   attempt.passed = result.passed;
   await attempt.save();
   return attempt;
@@ -462,11 +506,13 @@ async function submitAttempt(req, res, next) {
   try {
     const attempt = await QuizAttempt.findOne({ _id: req.params.attemptId, student: req.user._id });
     if (!attempt) return res.status(404).json({ message: 'Quiz attempt not found.' });
+    await ensureAttemptQuizUnlocked(attempt, req.user._id);
     const expired = attempt.expiresAt <= new Date();
     await finalizeAttempt(attempt, expired);
     return res.json({ attempt: attemptResponse(attempt) });
   } catch (error) {
     if (error.name === 'CastError') return res.status(404).json({ message: 'Quiz attempt not found.' });
+    if (error.status) return res.status(error.status).json({ message: error.message });
     return next(error);
   }
 }
