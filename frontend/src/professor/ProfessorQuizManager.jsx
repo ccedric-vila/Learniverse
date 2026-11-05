@@ -280,6 +280,9 @@ export default function ProfessorQuizManager({ classId, className = 'Class', onD
   const navigate = useNavigate()
   const [quizzes, setQuizzes] = useState([])
   const [students, setStudents] = useState([])
+  const [lessonData, setLessonData] = useState({ classId: null, items: [], error: '' })
+  const [selectedLessonIdState, setSelectedLessonId] = useState('')
+  const [generatedSourceMaterialIdState, setGeneratedSourceMaterialId] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [deadline, setDeadline] = useState('')
@@ -293,6 +296,7 @@ export default function ProfessorQuizManager({ classId, className = 'Class', onD
   const [multipleChoiceQuestions, setMultipleChoiceQuestions] = useState(() => Array.from({ length: 10 }, blankMultipleChoice))
   const [trueFalseQuestions, setTrueFalseQuestions] = useState(() => Array.from({ length: 10 }, blankTrueFalse))
   const [loading, setLoading] = useState(true)
+  const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('create')
   const [draftDirty, setDraftDirty] = useState(false)
@@ -311,6 +315,14 @@ export default function ProfessorQuizManager({ classId, className = 'Class', onD
   const protectedHistoryStateRef = useRef(null)
   const protectedHistoryUrlRef = useRef('')
   const scoreSummary = useMemo(() => getScoreSummary(students, quizzes), [students, quizzes])
+  const lessonsLoading = lessonData.classId !== classId
+  const lessons = lessonsLoading ? [] : lessonData.items
+  const lessonLoadError = lessonsLoading ? '' : lessonData.error
+  const selectedLessonId = lessons.some((lesson) => String(lesson._id) === selectedLessonIdState) ? selectedLessonIdState : ''
+  const generatedSourceMaterialId = lessons.some((lesson) => String(lesson._id) === generatedSourceMaterialIdState) ? generatedSourceMaterialIdState : ''
+  const generatedSourceLesson = lessons.find((lesson) => String(lesson._id) === generatedSourceMaterialId)
+  const selectedLesson = lessons.find((lesson) => String(lesson._id) === selectedLessonId)
+  const selectedLessonSupported = /\.(pdf|docx|pptx)$/i.test(selectedLesson?.originalFileName || '')
 
   useEffect(() => {
     onDraftStateChange(draftDirty)
@@ -403,6 +415,8 @@ export default function ProfessorQuizManager({ classId, className = 'Class', onD
     setTitle('')
     setDescription('')
     setDeadline('')
+    setSelectedLessonId('')
+    setGeneratedSourceMaterialId('')
     setMultipleChoiceCount(10)
     setTrueFalseCount(10)
     setMultipleChoiceQuestions(Array.from({ length: 10 }, blankMultipleChoice))
@@ -441,6 +455,26 @@ export default function ProfessorQuizManager({ classId, className = 'Class', onD
       })
       .catch((requestError) => { if (active) setError(requestError.response?.data?.message || 'Could not load class quizzes.') })
       .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [classId])
+
+  useEffect(() => {
+    let active = true
+    api.get(`/professor/classes/${classId}/materials`)
+      .then(({ data }) => {
+        if (active) setLessonData({
+          classId,
+          items: data.materials.filter((material) => material.category === 'lesson'),
+          error: '',
+        })
+      })
+      .catch((requestError) => {
+        if (active) setLessonData({
+          classId,
+          items: [],
+          error: requestError.response?.data?.message || 'Could not load this class’s lesson files.',
+        })
+      })
     return () => { active = false }
   }, [classId])
 
@@ -489,6 +523,42 @@ export default function ProfessorQuizManager({ classId, className = 'Class', onD
     setMultipleChoiceCount(multipleChoiceTotal)
     setTrueFalseQuestions((current) => Array.from({ length: nextCount }, (_, index) => current[index] || blankTrueFalse()))
     setMultipleChoiceQuestions((current) => Array.from({ length: multipleChoiceTotal }, (_, index) => current[index] || blankMultipleChoice()))
+  }
+
+  async function generateQuestionsFromLesson() {
+    if (!selectedLesson || !selectedLessonSupported) return
+    const hasQuestionContent = [...multipleChoiceQuestions, ...trueFalseQuestions].some((question) => (
+      question.prompt.trim()
+      || question.options?.some((option) => option.trim())
+      || (question.correctAnswer && question.correctAnswer !== 'True')
+    ))
+    if (hasQuestionContent && !window.confirm('Replace the questions currently in this draft with questions generated from the selected lesson?')) return
+
+    setError('')
+    setNotice('')
+    setGenerating(true)
+    try {
+      const { data } = await api.post(`/professor/classes/${classId}/quizzes/generate-draft`, {
+        sourceMaterialId: selectedLessonId,
+        multipleChoiceCount,
+        trueFalseCount,
+      })
+      const generatedMultipleChoice = data.questions.filter((question) => question.type === 'multiple_choice')
+      const generatedTrueFalse = data.questions.filter((question) => question.type === 'true_false')
+      if (generatedMultipleChoice.length !== multipleChoiceCount || generatedTrueFalse.length !== trueFalseCount) {
+        throw new Error('The generated question mix did not match the requested counts. Please try again.')
+      }
+      setMultipleChoiceQuestions(generatedMultipleChoice)
+      setTrueFalseQuestions(generatedTrueFalse)
+      setGeneratedSourceMaterialId(data.sourceLesson.id)
+      setTitle((current) => current.trim() ? current : `${data.sourceLesson.title} Quiz`.slice(0, 160))
+      markDraftDirty()
+      setNotice(`Generated a ${data.questions.length}-question draft from ${data.sourceLesson.originalFileName}. Review the questions and answer keys before publishing.`)
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || requestError.message || 'Could not generate questions from this lesson.')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   function updateMultipleChoice(index, field, value, optionIndex) {
@@ -560,10 +630,18 @@ export default function ProfessorQuizManager({ classId, className = 'Class', onD
     }
     setSaving(true)
     try {
-      const { data } = await api.post(`/professor/classes/${classId}/quizzes`, { title, description, deadline: new Date(deadline).toISOString(), questions })
+      const { data } = await api.post(`/professor/classes/${classId}/quizzes`, {
+        title,
+        description,
+        deadline: new Date(deadline).toISOString(),
+        questions,
+        ...(generatedSourceMaterialId ? { sourceMaterial: generatedSourceMaterialId } : {}),
+      })
       setTitle('')
       setDescription('')
       setDeadline('')
+      setSelectedLessonId('')
+      setGeneratedSourceMaterialId('')
       setMultipleChoiceCount(10)
       setTrueFalseCount(10)
       setMultipleChoiceQuestions(Array.from({ length: 10 }, blankMultipleChoice))
@@ -630,14 +708,35 @@ export default function ProfessorQuizManager({ classId, className = 'Class', onD
       {activeTab === 'create' ? (
       <div id="quiz-create-panel" role="tabpanel" aria-labelledby="quiz-create-tab">
       <form className="quiz-builder" onSubmit={submitQuiz}>
-        <label className="quiz-field"><span>Quiz title <b>*</b></span><input required maxLength={160} value={title} onChange={(event) => { setTitle(event.target.value); markDraftDirty() }} placeholder="e.g. Introduction quiz" /></label>
-        <label className="quiz-field"><span>Instructions <small>Optional</small></span><textarea rows={2} maxLength={2000} value={description} onChange={(event) => { setDescription(event.target.value); markDraftDirty() }} placeholder="Instructions for students" /></label>
-        <label className="quiz-field"><span>Deadline <b>*</b></span><input type="datetime-local" required min={minimumDeadline} value={deadline} onChange={(event) => { setDeadline(event.target.value); markDraftDirty() }} /><small>Students may retake quizzes after the deadline, but their recorded score is halved.</small></label>
+        <label className="quiz-field">
+          <span>Generate questions from a lesson <small>No AI API key required</small></span>
+          <select
+            value={selectedLessonId}
+            disabled={lessonsLoading || Boolean(lessonLoadError)}
+            onChange={(event) => { setSelectedLessonId(event.target.value); markDraftDirty() }}
+          >
+            <option value="">{lessonsLoading ? 'Loading lesson files…' : 'Choose an uploaded lesson file'}</option>
+            {lessons.map((lesson) => {
+              const supported = /\.(pdf|docx|pptx)$/i.test(lesson.originalFileName)
+              return <option key={lesson._id} value={lesson._id} disabled={!supported}>{lesson.title} · {lesson.originalFileName}{supported ? '' : ' (format not supported for extraction)'}</option>
+            })}
+          </select>
+          <small>{lessonLoadError || (lessons.length === 0 && !lessonsLoading
+            ? 'Upload a lesson file to use automatic question generation.'
+            : 'Free local generation extracts text from PDF, DOCX, or PPTX files. It is not an AI model, so review the draft carefully. Legacy DOC/PPT files are not supported.')}</small>
+        </label>
         <div className="quiz-count-grid">
           <label className="quiz-field"><span>Multiple-choice questions</span><input type="number" min="0" max="20" value={multipleChoiceCount} onChange={(event) => resizeQuestions('multiple_choice', event.target.value)} /></label>
           <label className="quiz-field"><span>True/false questions</span><input type="number" min="0" max="20" value={trueFalseCount} onChange={(event) => resizeQuestions('true_false', event.target.value)} /></label>
         </div>
         <p className="quiz-rule-note">{multipleChoiceCount + trueFalseCount} of 20 required questions · 10 minutes · at least 15 correct to pass</p>
+        <button className="quiz-secondary-button" type="button" disabled={!selectedLessonSupported || generating || saving} onClick={generateQuestionsFromLesson}>
+          <BookOpen size={15} />{generating ? 'Generating questions…' : 'Generate editable draft'}
+        </button>
+        {generatedSourceLesson && <p className="quiz-rule-note">Current generated draft source: {generatedSourceLesson.title} ({generatedSourceLesson.originalFileName})</p>}
+        <label className="quiz-field"><span>Quiz title <b>*</b></span><input required maxLength={160} value={title} onChange={(event) => { setTitle(event.target.value); markDraftDirty() }} placeholder="e.g. Introduction quiz" /></label>
+        <label className="quiz-field"><span>Instructions <small>Optional</small></span><textarea rows={2} maxLength={2000} value={description} onChange={(event) => { setDescription(event.target.value); markDraftDirty() }} placeholder="Instructions for students" /></label>
+        <label className="quiz-field"><span>Deadline <b>*</b></span><input type="datetime-local" required min={minimumDeadline} value={deadline} onChange={(event) => { setDeadline(event.target.value); markDraftDirty() }} /><small>Students may retake quizzes after the deadline, but their recorded score is halved.</small></label>
 
         {multipleChoiceQuestions.slice(0, multipleChoiceCount).map((question, index) => (
           <fieldset className="quiz-question-editor" key={`mc-${index}`}>
@@ -711,6 +810,7 @@ export default function ProfessorQuizManager({ classId, className = 'Class', onD
                   {quiz.deadline && <span>Due {new Date(quiz.deadline).toLocaleString()}</span>}
                   <span>10 min</span>
                   <span>75% to pass</span>
+                  {quiz.sourceMaterial && <span>Source: {quiz.sourceMaterial.originalFileName}</span>}
                 </div>
               </div>
               <button
@@ -773,7 +873,7 @@ export default function ProfessorQuizManager({ classId, className = 'Class', onD
               <div>
                 <span>QUIZ CONTENT</span>
                 <h3 id="quiz-preview-title">{previewQuiz.title}</h3>
-                <p>{previewQuiz.description || 'Questions and correct answers'} · {previewQuiz.questionCount} questions</p>
+                <p>{previewQuiz.description || 'Questions and correct answers'} · {previewQuiz.questionCount} questions{previewQuiz.sourceMaterial ? ` · Source: ${previewQuiz.sourceMaterial.originalFileName}` : ''}</p>
               </div>
               <button type="button" aria-label="Close quiz preview" onClick={() => setPreviewQuizId(null)}><X size={19} /></button>
             </header>

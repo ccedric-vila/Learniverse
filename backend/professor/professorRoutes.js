@@ -9,7 +9,7 @@ const {
 	getDashboard,
 	updateClassDetails,
 } = require('./professorController');
-const { createQuiz, getProfessorQuizzes } = require('../quizzes/quizController');
+const { createQuiz, generateProfessorQuizDraft, getProfessorQuizzes } = require('../quizzes/quizController');
 const {
 	deleteProfessorMaterial,
 	getAllProfessorMaterials,
@@ -47,6 +47,7 @@ router.post('/classes', createClassOffering);
 router.patch('/classes/:classId', updateClassDetails);
 router.get('/classes/:classId/students', getClassStudents);
 router.get('/classes/:classId/quizzes', getProfessorQuizzes);
+router.post('/classes/:classId/quizzes/generate-draft', generateProfessorQuizDraft);
 router.post('/classes/:classId/quizzes', createQuiz);
 router.get('/materials', getAllProfessorMaterials);
 router.get('/classes/:classId/materials', getProfessorMaterials);

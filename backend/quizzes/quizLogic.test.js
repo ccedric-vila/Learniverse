@@ -10,7 +10,7 @@ const {
   recordQuizScore,
   scoreAnswers,
 } = require('./quizLogic');
-const { createPracticeQuestions } = require('./practiceQuestionGenerator');
+const { createPracticeQuestions, generateQuizQuestions } = require('./practiceQuestionGenerator');
 
 function multipleChoice(prompt, answer = 'A') {
   return { prompt, type: 'multiple_choice', options: ['A', 'B', 'C', 'D'], correctAnswer: answer };
@@ -153,6 +153,27 @@ test('practice generation creates 10 multiple-choice and 10 true/false questions
     && question.options.includes(question.correctAnswer)
     && question.prompt.includes('_____')));
   assert.deepEqual(new Set(trueFalse.map((question) => question.correctAnswer)), new Set(['True', 'False']));
+});
+
+test('lesson quiz generation respects the professor-selected question mix', () => {
+  const statements = [
+    'Hydrology studies the movement and distribution of water across the Earth.',
+    'Thermodynamics explains relationships between heat, work, temperature, and energy.',
+    'Concrete combines cement, water, sand, and aggregates into a durable construction material.',
+    'Surveying measures distances and angles to determine positions on land.',
+    'Microcontrollers combine processors, memory, and input output peripherals in embedded systems.',
+    'Ecology examines relationships between organisms and their surrounding environments.',
+    'Electromagnetism describes interactions between electric charges and magnetic fields.',
+    'Algorithms provide ordered steps for solving computational problems efficiently.',
+    'Biodiversity represents the variety of living species within a particular ecosystem.',
+    'Pneumatics uses compressed air to transmit power and control industrial equipment.',
+    'Geology investigates materials, structures, and processes that shape the Earth.',
+    'Insulation reduces unwanted transfer of heat through building materials.',
+  ];
+  const questions = generateQuizQuestions(statements.join('\n'), 8, 12);
+  assert.equal(questions.length, 20);
+  assert.equal(questions.filter((question) => question.type === 'multiple_choice').length, 8);
+  assert.equal(questions.filter((question) => question.type === 'true_false').length, 12);
 });
 
 test('practice generation reports when lesson text cannot support a full quiz', async () => {

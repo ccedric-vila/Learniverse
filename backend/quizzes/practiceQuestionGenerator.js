@@ -64,18 +64,22 @@ function getFacts(sourceText) {
   return facts;
 }
 
-function createPracticeQuestions(sourceText) {
+function createQuestionsFromLesson(sourceText, multipleChoiceCount, trueFalseCount, shareSelectedFacts = false) {
   const facts = getFacts(sourceText);
-  if (facts.length < 10) {
-    throw generationError('This lesson does not contain enough distinct readable statements to create 20 practice questions. Try a lesson with more text.');
+  const requiredFacts = Math.max(multipleChoiceCount, trueFalseCount);
+  if (facts.length < requiredFacts) {
+    throw generationError(`This lesson does not contain enough distinct readable statements to create ${requiredFacts} questions. Try a lesson with more text.`);
   }
 
+  const selectedFacts = shareSelectedFacts ? shuffle(facts).slice(0, requiredFacts) : null;
   const termPool = [...new Map([...sourceText.matchAll(/\b[A-Za-z][A-Za-z'-]{3,}\b/g)]
     .map((match) => match[0])
     .filter((word) => !STOP_WORDS.has(word.toLowerCase()) && word.length <= 40)
     .map((word) => [word.toLowerCase(), word])).values()];
-  const selectedFacts = shuffle(facts).slice(0, 10);
-  const multipleChoice = selectedFacts.map(({ sentence, keyword, start }) => {
+  const multipleChoiceFacts = selectedFacts
+    ? selectedFacts.slice(0, multipleChoiceCount)
+    : shuffle(facts).slice(0, multipleChoiceCount);
+  const multipleChoice = multipleChoiceFacts.map(({ sentence, keyword, start }) => {
     const sentenceWords = new Set([...sentence.matchAll(/\b[A-Za-z][A-Za-z'-]{3,}\b/g)]
       .map((match) => match[0].toLowerCase()));
     const distractors = shuffle(termPool.filter((term) => (
@@ -94,7 +98,10 @@ function createPracticeQuestions(sourceText) {
     };
   });
 
-  const trueFalse = selectedFacts.map(({ sentence, keyword, start }, index) => {
+  const trueFalseFacts = selectedFacts
+    ? selectedFacts.slice(0, trueFalseCount)
+    : shuffle(facts).slice(0, trueFalseCount);
+  const trueFalse = trueFalseFacts.map(({ sentence, keyword, start }, index) => {
     let statement = sentence;
     let correctAnswer = 'True';
     if (index % 2 === 1) {
@@ -120,8 +127,21 @@ function createPracticeQuestions(sourceText) {
   return normalizeQuizQuestions([...multipleChoice, ...trueFalse]);
 }
 
+function createPracticeQuestions(sourceText) {
+  return createQuestionsFromLesson(sourceText, 10, 10, true);
+}
+
+function generateQuizQuestions(sourceText, multipleChoiceCount, trueFalseCount) {
+  if (!Number.isInteger(multipleChoiceCount) || multipleChoiceCount < 0 || multipleChoiceCount > 20
+    || !Number.isInteger(trueFalseCount) || trueFalseCount < 0 || trueFalseCount > 20
+    || multipleChoiceCount + trueFalseCount !== 20) {
+    throw generationError('Choose question counts that add up to exactly 20.');
+  }
+  return createQuestionsFromLesson(sourceText, multipleChoiceCount, trueFalseCount);
+}
+
 async function generatePracticeQuestions(sourceText) {
   return createPracticeQuestions(sourceText);
 }
 
-module.exports = { createPracticeQuestions, generatePracticeQuestions };
+module.exports = { createPracticeQuestions, generatePracticeQuestions, generateQuizQuestions };

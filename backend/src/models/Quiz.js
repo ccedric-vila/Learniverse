@@ -10,6 +10,7 @@ const quizQuestionSchema = new mongoose.Schema({
 const quizSchema = new mongoose.Schema({
   classOffering: { type: mongoose.Schema.Types.ObjectId, ref: 'ClassOffering', required: true, index: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  sourceMaterial: { type: mongoose.Schema.Types.ObjectId, ref: 'ClassMaterial', default: null },
   title: { type: String, required: true, trim: true, maxlength: 160 },
   description: { type: String, trim: true, maxlength: 2000, default: '' },
   deadline: { type: Date },

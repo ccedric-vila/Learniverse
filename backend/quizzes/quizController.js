@@ -7,7 +7,7 @@ const QuizAttempt = require('../src/models/QuizAttempt');
 const { notifyOnlineQuizPublished } = require('../notifications/notificationService');
 const { cloudinary } = require('../config/cloudinary');
 const { extractLessonText } = require('./lessonText');
-const { generatePracticeQuestions } = require('./practiceQuestionGenerator');
+const { generatePracticeQuestions, generateQuizQuestions } = require('./practiceQuestionGenerator');
 const {
   PASSING_PERCENT,
   QUIZ_DURATION_MINUTES,
@@ -98,9 +98,19 @@ async function createQuiz(req, res, next) {
     } catch (error) {
       return res.status(400).json({ message: error.message });
     }
+    let sourceMaterial = null;
+    if (req.body.sourceMaterial !== undefined && req.body.sourceMaterial !== null && req.body.sourceMaterial !== '') {
+      sourceMaterial = await ClassMaterial.findOne({
+        _id: req.body.sourceMaterial,
+        classOffering: offering._id,
+        category: 'lesson',
+      }).select('_id');
+      if (!sourceMaterial) return res.status(400).json({ message: 'Choose a lesson file from this class as the quiz source.' });
+    }
     const quiz = await Quiz.create({
       classOffering: offering._id,
       createdBy: req.user._id,
+      sourceMaterial: sourceMaterial?._id || null,
       title,
       description,
       deadline,
@@ -133,11 +143,67 @@ async function createQuiz(req, res, next) {
   }
 }
 
+async function generateProfessorQuizDraft(req, res, next) {
+  try {
+    const offering = await ownedProfessorClass(req.params.classId, req.user._id);
+    const { sourceMaterialId, multipleChoiceCount, trueFalseCount } = req.body;
+    if (typeof sourceMaterialId !== 'string' || !sourceMaterialId.trim()) {
+      return res.status(400).json({ message: 'Choose a lesson file to generate quiz questions.' });
+    }
+    if (!Number.isInteger(multipleChoiceCount) || !Number.isInteger(trueFalseCount)
+      || multipleChoiceCount < 0 || multipleChoiceCount > 20
+      || trueFalseCount < 0 || trueFalseCount > 20
+      || multipleChoiceCount + trueFalseCount !== 20) {
+      return res.status(400).json({ message: 'Multiple-choice and true/false question counts must add up to exactly 20.' });
+    }
+
+    const material = await ClassMaterial.findOne({
+      _id: sourceMaterialId,
+      classOffering: offering._id,
+      category: 'lesson',
+    }).select('+cloudinaryPublicId title originalFileName');
+    if (!material) return res.status(404).json({ message: 'Lesson file not found in this class.' });
+
+    const downloadUrl = cloudinary.utils.private_download_url(material.cloudinaryPublicId, undefined, {
+      resource_type: 'raw',
+      type: 'authenticated',
+      expires_at: Math.floor(Date.now() / 1000) + 5 * 60,
+    });
+    const upstream = await fetch(downloadUrl, { signal: AbortSignal.timeout(30000) });
+    if (!upstream.ok) throw httpError(502, 'Could not retrieve this lesson file for question generation.');
+    const fileBuffer = Buffer.from(await upstream.arrayBuffer());
+    if (fileBuffer.length > 20 * 1024 * 1024) {
+      throw httpError(413, 'Lesson files must be 20 MB or smaller to generate quiz questions.');
+    }
+    const sourceText = await extractLessonText(fileBuffer, material.originalFileName);
+    const questions = generateQuizQuestions(sourceText, multipleChoiceCount, trueFalseCount);
+    return res.json({
+      questions,
+      sourceLesson: {
+        id: material._id,
+        title: material.title,
+        originalFileName: material.originalFileName,
+      },
+    });
+  } catch (error) {
+    if (error.name === 'CastError') return res.status(404).json({ message: 'Lesson file or class not found.' });
+    if (error.status) return res.status(error.status).json({ message: error.message });
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      return res.status(504).json({ message: 'Retrieving the lesson file took too long. Please try again.' });
+    }
+    if (error.message?.includes('Practice generation supports') || error.message?.includes('Not enough readable text')
+      || error.message?.includes('Scanned PDFs are limited')) {
+      return res.status(422).json({ message: error.message });
+    }
+    return next(error);
+  }
+}
+
 async function getProfessorQuizzes(req, res, next) {
   try {
     const offering = await ownedProfessorClass(req.params.classId, req.user._id);
     const [quizzes, enrollments] = await Promise.all([
-      Quiz.find({ classOffering: offering._id }).sort({ createdAt: 1, _id: 1 }).lean(),
+      Quiz.find({ classOffering: offering._id }).populate('sourceMaterial', 'title originalFileName').sort({ createdAt: 1, _id: 1 }).lean(),
       Enrollment.find({ classOffering: offering._id })
         .populate({
           path: 'student',
@@ -195,6 +261,11 @@ async function getProfessorQuizzes(req, res, next) {
         id: quiz._id,
         title: quiz.title,
         description: quiz.description,
+        sourceMaterial: quiz.sourceMaterial ? {
+          id: quiz.sourceMaterial._id,
+          title: quiz.sourceMaterial.title,
+          originalFileName: quiz.sourceMaterial.originalFileName,
+        } : null,
         questionCount: quiz.questions.length,
         multipleChoiceCount: quiz.questions.filter((question) => question.type === 'multiple_choice').length,
         trueFalseCount: quiz.questions.filter((question) => question.type === 'true_false').length,
@@ -519,6 +590,7 @@ async function submitAttempt(req, res, next) {
 
 module.exports = {
   createQuiz,
+  generateProfessorQuizDraft,
   getAttempt,
   getProfessorQuizzes,
   getStudentPracticeMaterials,
