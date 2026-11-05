@@ -65,6 +65,11 @@
 .auth-card .auth-password-toggle { display: grid; width: 35px; min-height: 35px; flex: 0 0 auto; place-items: center; padding: 0; margin: 0; border-radius: 8px; color: #71847c; background: transparent; }
 .auth-card .auth-password-toggle:hover:not(:disabled) { color: #285f55; background: #edf5f1; transform: none; }
 .auth-card .auth-password-toggle:focus-visible { outline: 2px solid #579181; outline-offset: 1px; }
+.auth-google-button { display: flex; min-height: 40px; justify-content: center; overflow: hidden; }
+.auth-divider { display: flex; align-items: center; gap: 12px; color: #97a39f; font-size: 10px; }
+.auth-divider::before, .auth-divider::after { height: 1px; flex: 1; background: #e7ece9; content: ''; }
+.auth-card .auth-text-button { display: inline-flex; min-height: 32px; justify-self: center; padding: 0 7px; margin: -7px 0 0; color: #39766b; background: transparent; font-size: 10px; font-weight: 700; }
+.auth-card .auth-text-button:hover:not(:disabled) { color: #285d53; background: #edf5f1; transform: none; }
 .auth-switch { margin: 1px 0 0; color: #7d8b8e; font-size: 11px; text-align: center; }
 .auth-switch a { display: inline-block; color: #39766b; font-weight: 750; text-decoration: none; transition: color .18s, transform .18s; }
 .auth-switch a:hover { color: #285d53; text-decoration: underline; transform: translateX(2px); }
@@ -101,6 +106,7 @@
 .privacy-policy-footer button:hover { border-color: #2e655a !important; background: #2e655a !important; transform: translateY(-1px) !important; }
 .privacy-policy-dialog button:focus-visible { outline: 3px solid rgb(57 118 107 / 30%); outline-offset: 3px; }
 .auth-error { margin: 0; padding: 11px 13px; border: 1px solid #f4d0cc; border-radius: 9px; color: #963d36; background: #fff5f3; font-size: 12px; line-height: 1.5; }
+.auth-success { margin: 0; padding: 11px 13px; border: 1px solid #d5e9dd; border-radius: 9px; color: #35654d; background: #f2faf5; font-size: 12px; line-height: 1.5; }
 .auth-register-card { gap: 13px; }
 .auth-register-card h1 { margin-bottom: -10px; }
 .auth-register-card .auth-card-intro { margin-bottom: 3px; }

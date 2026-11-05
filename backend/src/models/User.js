@@ -30,8 +30,14 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'Password is required'],
+    required: false,
     minlength: 8,
+    select: false,
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true,
     select: false,
   },
   role: {
@@ -87,11 +93,12 @@ const userSchema = new mongoose.Schema({
 });
 
 userSchema.pre('save', async function hashPassword() {
-  if (!this.isModified('password')) return;
+  if (!this.isModified('password') || this.$locals.passwordAlreadyHashed) return;
   this.password = await bcrypt.hash(this.password, 10);
 });
 
 userSchema.methods.matchPassword = function matchPassword(enteredPassword) {
+  if (typeof this.password !== 'string') return false;
   return bcrypt.compare(enteredPassword, this.password);
 };
 

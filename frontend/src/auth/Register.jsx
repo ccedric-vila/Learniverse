@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { ArrowRight, BookOpen, CalendarDays, Eye, EyeOff, LockKeyhole, MessageSquareText, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import GoogleSignInButton from './GoogleSignInButton'
+import { googleSignInEnabled } from './googleSignInConfig'
 import './auth.css'
 
 export default function Register() {
-  const { register, user } = useAuth()
+  const { register, verifyRegistration, googleLogin, user } = useAuth()
   const navigate = useNavigate()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -14,6 +16,10 @@ export default function Register() {
   const [privacyAccepted, setPrivacyAccepted] = useState(false)
   const [privacyOpen, setPrivacyOpen] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [verificationStep, setVerificationStep] = useState(false)
+  const [verificationCode, setVerificationCode] = useState('')
+  const [resendWait, setResendWait] = useState(0)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -24,6 +30,12 @@ export default function Register() {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [privacyOpen])
+
+  useEffect(() => {
+    if (resendWait <= 0) return undefined
+    const timer = window.setTimeout(() => setResendWait((current) => Math.max(0, current - 1)), 1000)
+    return () => window.clearTimeout(timer)
+  }, [resendWait])
 
   if (user) return <Navigate to="/student" replace />
 
@@ -36,10 +48,61 @@ export default function Register() {
     }
     setSubmitting(true)
     try {
-      await register({ fullName: fullName.trim(), email: email.trim(), password })
-      navigate('/student', { replace: true })
+      const result = await register({ fullName: fullName.trim(), email: email.trim(), password })
+      setVerificationStep(true)
+      setVerificationCode('')
+      setResendWait(result.retryAfterSeconds || 60)
+      setNotice(result.message || 'Check your email for a verification code.')
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Unable to create your account. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleVerify(event) {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    setSubmitting(true)
+    try {
+      await verifyRegistration({ email: email.trim(), code: verificationCode })
+      navigate('/student', { replace: true })
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Unable to verify your email. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function resendVerificationCode() {
+    setError('')
+    setNotice('')
+    setSubmitting(true)
+    try {
+      const result = await register({ fullName: fullName.trim(), email: email.trim(), password })
+      setResendWait(result.retryAfterSeconds || 60)
+      setNotice(result.message || 'A new verification code has been sent.')
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Unable to resend the verification code.')
+      setResendWait(requestError.response?.data?.retryAfterSeconds || 0)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleGoogleSignIn(credential) {
+    if (!privacyAccepted) {
+      setError('Please agree to the privacy policy before continuing.')
+      return
+    }
+    setError('')
+    setSubmitting(true)
+    try {
+      await googleLogin(credential)
+      navigate('/student', { replace: true })
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Unable to sign in with Google. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -64,11 +127,30 @@ export default function Register() {
         </aside>
 
         <div className="auth-form-panel">
-          <form className="auth-card auth-register-card" onSubmit={handleSubmit}>
+          <form className="auth-card auth-register-card" onSubmit={verificationStep ? handleVerify : handleSubmit}>
             <span className="auth-form-eyebrow">GET STARTED</span>
-            <h1>Create your account</h1>
-            <p className="auth-card-intro">Set up your student account and join the learning.</p>
+            <h1>{verificationStep ? 'Check your email' : 'Create your account'}</h1>
+            <p className="auth-card-intro">{verificationStep
+              ? `Enter the six-digit code sent to ${email}. It expires in 10 minutes.`
+              : 'Set up your student account and join the learning.'}</p>
             {error && <p className="auth-error" role="alert">{error}</p>}
+            {notice && <p className="auth-success" role="status">{notice}</p>}
+            {verificationStep ? (
+              <>
+                <div className="auth-field">
+                  <label htmlFor="register-verification-code">Email verification code</label>
+                  <input id="register-verification-code" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} placeholder="6-digit code" required value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} />
+                </div>
+                <button type="submit" disabled={submitting}>{submitting ? 'Verifying…' : <>Verify and create account <ArrowRight size={17} /></>}</button>
+                <button className="auth-text-button" type="button" disabled={submitting || resendWait > 0} onClick={resendVerificationCode}>
+                  {resendWait > 0 ? `Resend code in ${resendWait}s` : 'Resend verification code'}
+                </button>
+                <button className="auth-text-button" type="button" disabled={submitting} onClick={() => { setVerificationStep(false); setVerificationCode(''); setError(''); setNotice('') }}>
+                  Back to registration details
+                </button>
+              </>
+            ) : (
+              <>
             <div className="auth-field">
               <label htmlFor="register-name">Full name</label>
               <input id="register-name" type="text" autoComplete="name" minLength={2} maxLength={150} pattern="[A-Za-zÀ-ÖØ-öø-ÿ]+([ .'-][A-Za-zÀ-ÖØ-öø-ÿ]+)*" title="Use letters, spaces, apostrophes, periods, or hyphens." placeholder="Your name" required value={fullName} onChange={(event) => setFullName(event.target.value)} />
@@ -100,8 +182,17 @@ export default function Register() {
               <label htmlFor="register-privacy">I agree to the</label>
               <button className="privacy-policy-link" type="button" onClick={() => setPrivacyOpen(true)}>privacy policy</button>
             </div>
-            <button type="submit" disabled={submitting}>{submitting ? 'Creating account…' : <>Create account <ArrowRight size={17} /></>}</button>
+            <button type="submit" disabled={submitting}>{submitting ? 'Sending verification code…' : <>Continue with email <ArrowRight size={17} /></>}</button>
+            {googleSignInEnabled && (
+              <>
+                <div className="auth-divider"><span>or</span></div>
+                <GoogleSignInButton onSuccess={handleGoogleSignIn} onError={setError} />
+                {!privacyAccepted && <small className="auth-field-hint">Agree to the privacy policy to continue with Google.</small>}
+              </>
+            )}
             <p className="auth-switch">Already have an account? <Link to="/login" viewTransition className="auth-switch-link">Sign in</Link></p>
+              </>
+            )}
           </form>
           <p className="auth-form-footnote">A shared learning space for every subject.</p>
         </div>
@@ -118,7 +209,7 @@ export default function Register() {
             </header>
             <div className="privacy-policy-content">
               <p className="privacy-policy-notice">Please review this information before creating an account. Your school or institution may provide additional privacy terms that also apply.</p>
-              <section><h3>Information collected</h3><p>When you register, Learniverse collects your name, email address, and password. As you use the learning platform, it may also store class enrollment, quiz responses and scores, submissions, and other information you choose to provide.</p></section>
+              <section><h3>Information collected</h3><p>When you register, Learniverse collects your name and email address, and stores a protected password hash when you choose password registration. Email registration uses a one-time verification code. Google sign-in uses account details provided by Google. As you use the platform, it may also store class enrollment, quiz responses and scores, submissions, and other information you provide.</p></section>
               <section><h3>How information is used</h3><p>Information is used to create and secure your account, provide access to classes and learning activities, record academic progress, and deliver relevant class updates. Passwords are stored as protected password hashes rather than readable text.</p></section>
               <section><h3>Who can see learning information</h3><p>Authorized instructors and school administrators may access account or class-related information as needed to manage classes, provide instruction, and support the platform.</p></section>
               <section><h3>Retention and questions</h3><p>Your institution determines applicable academic-record retention and deletion practices. For questions about access, correction, deletion, or the institution’s privacy contact, please contact your school administrator.</p></section>
