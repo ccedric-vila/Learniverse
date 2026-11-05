@@ -1,14 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const {
-	getMe,
-	googleLogin,
-	login,
-	register,
-	updateProfile,
-	uploadProfileImage,
-	verifyRegistration,
-} = require('./authController');
+const { getMe, login, register, updateProfile, uploadProfileImage } = require('./authController');
 const { authorize, protect } = require('./authMiddleware');
 
 const router = express.Router();
@@ -26,9 +18,7 @@ const uploadImage = multer({
 });
 
 router.post('/register', register);
-router.post('/register/verify', verifyRegistration);
 router.post('/login', login);
-router.post('/google', googleLogin);
 router.get('/me', protect, getMe);
 router.put('/profile', protect, authorize('STUDENT', 'PROFESSOR'), updateProfile);
 router.post('/profile-image', protect, authorize('STUDENT', 'PROFESSOR'), uploadImage.single('image'), uploadProfileImage);

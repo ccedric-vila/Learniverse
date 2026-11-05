@@ -62,16 +62,7 @@ export function AuthProvider({ children }) {
   }
 
   async function register(details) {
-    const { data } = await api.post('/auth/register', details)
-    return data
-  }
-
-  async function verifyRegistration(details) {
-    return authenticate('register/verify', details)
-  }
-
-  async function googleLogin(credential) {
-    return authenticate('google', { credential })
+    return authenticate('register', details)
   }
 
   async function updateProfile(details) {
@@ -86,17 +77,7 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
-  const value = useMemo(() => ({
-    user,
-    token,
-    loading,
-    login,
-    register,
-    verifyRegistration,
-    googleLogin,
-    updateProfile,
-    logout,
-  }), [user, token, loading])
+  const value = useMemo(() => ({ user, token, loading, login, register, updateProfile, logout }), [user, token, loading])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

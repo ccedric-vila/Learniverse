@@ -1,60 +1,10 @@
-const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
-const PendingRegistration = require('../models/PendingRegistration');
 const { cloudinary, folder } = require('../../config/cloudinary');
 const { createUniqueUsername } = require('../../utils/usernames');
 const COURSE_PROGRAMS = require('../../utils/coursePrograms');
 const { DEPARTMENTS } = require('../../utils/departments');
 const { departmentForProgram } = require('../../utils/courseDepartments');
-const {
-  CODE_TTL_MINUTES,
-  MAX_CODE_ATTEMPTS,
-  RESEND_COOLDOWN_SECONDS,
-  createVerificationCode,
-  hashVerificationCode,
-  validRegistrationPassword,
-  verificationCodeMatches,
-} = require('./registrationVerification');
-
-const googleOAuthClient = new OAuth2Client();
-
-function httpError(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  return error;
-}
-
-async function sendRegistrationCode(email, code) {
-  if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM) {
-    throw httpError(503, 'Email verification is not configured. Please contact the system administrator.');
-  }
-
-  let response;
-  try {
-    response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: process.env.RESEND_FROM,
-        to: [email],
-        subject: 'Your Learniverse verification code',
-        text: `Your Learniverse verification code is ${code}. It expires in ${CODE_TTL_MINUTES} minutes. If you did not request this, you can ignore this email.`,
-      }),
-      signal: AbortSignal.timeout(10000),
-    });
-  } catch {
-    throw httpError(502, 'We could not send the verification email. Please try again later.');
-  }
-  if (!response.ok) {
-    console.error(`Resend rejected a registration email with status ${response.status}.`);
-    throw httpError(502, 'We could not send the verification email. Please try again later.');
-  }
-}
 
 function createToken(user) {
   if (!process.env.JWT_SECRET) {
@@ -93,11 +43,14 @@ async function register(req, res, next) {
     const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
     const password = typeof req.body.password === 'string' ? req.body.password : '';
 
-    if (!fullName || !email || !password || fullName.length > 150 || email.length > 254
-      || !/^\S+@\S+\.\S+$/.test(email)) {
+    if (!fullName || !email || !password) {
       return res.status(400).json({ message: 'Full name, email, and password are required.' });
     }
-    if (!validRegistrationPassword(password)) {
+    if (password.length < 8
+      || !/[a-z]/.test(password)
+      || !/[A-Z]/.test(password)
+      || !/[0-9]/.test(password)
+      || !/[^A-Za-z0-9\s]/.test(password)) {
       return res.status(400).json({
         message: 'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character.',
       });
@@ -108,117 +61,20 @@ async function register(req, res, next) {
       return res.status(409).json({ message: 'An account with this email already exists.' });
     }
 
-    const now = new Date();
-    const pending = await PendingRegistration.findOne({ email });
-    const cooldownRemaining = pending
-      ? RESEND_COOLDOWN_SECONDS - Math.floor((now.getTime() - pending.lastSentAt.getTime()) / 1000)
-      : 0;
-    if (pending && pending.expiresAt > now && cooldownRemaining > 0) {
-      return res.status(429).json({
-        message: `Wait ${cooldownRemaining} seconds before requesting another verification code.`,
-        retryAfterSeconds: cooldownRemaining,
-      });
-    }
-
-    if (!process.env.JWT_SECRET) {
-      throw httpError(503, 'Registration is not configured. Please contact the system administrator.');
-    }
-    const code = createVerificationCode();
-    const passwordHash = await bcrypt.hash(password, 10);
-    await sendRegistrationCode(email, code);
-    await PendingRegistration.findOneAndUpdate(
-      { email },
-      {
-        fullName,
-        email,
-        passwordHash,
-        codeHash: hashVerificationCode(email, code, process.env.JWT_SECRET),
-        expiresAt: new Date(now.getTime() + CODE_TTL_MINUTES * 60 * 1000),
-        lastSentAt: now,
-        attempts: 0,
-      },
-      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
-    );
-    return res.status(202).json({
-      message: 'A verification code has been sent to your email address.',
-      expiresInMinutes: CODE_TTL_MINUTES,
-      retryAfterSeconds: RESEND_COOLDOWN_SECONDS,
-    });
-  } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({ message: 'An account with this email already exists.' });
-    }
-    if (error.status) return res.status(error.status).json({ message: error.message });
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({ message: error.message });
-    }
-    return next(error);
-  }
-}
-
-async function verifyRegistration(req, res, next) {
-  try {
-    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
-    if (!email || !/^\S+@\S+\.\S+$/.test(email) || !/^\d{6}$/.test(code)) {
-      return res.status(400).json({ message: 'Enter the email address and six-digit verification code.' });
-    }
-    if (!process.env.JWT_SECRET) {
-      throw httpError(503, 'Registration is not configured. Please contact the system administrator.');
-    }
-
-    const pending = await PendingRegistration.findOne({ email }).select('+passwordHash +codeHash');
-    const now = new Date();
-    if (!pending || pending.expiresAt <= now) {
-      if (pending) await PendingRegistration.deleteOne({ _id: pending._id });
-      return res.status(400).json({ message: 'That verification code is invalid or expired. Request a new code.' });
-    }
-    if (!verificationCodeMatches(email, code, pending.codeHash, process.env.JWT_SECRET)) {
-      const updated = await PendingRegistration.findOneAndUpdate(
-        { _id: pending._id, attempts: { $lt: MAX_CODE_ATTEMPTS } },
-        { $inc: { attempts: 1 } },
-        { new: true },
-      );
-      if (!updated || updated.attempts >= MAX_CODE_ATTEMPTS) {
-        await PendingRegistration.deleteOne({ _id: pending._id });
-        return res.status(429).json({ message: 'Too many incorrect codes. Start registration again to get a new code.' });
-      }
-      return res.status(400).json({ message: 'That verification code is incorrect.' });
-    }
-
-    const consumed = await PendingRegistration.findOneAndDelete({
-      _id: pending._id,
-      codeHash: pending.codeHash,
-      attempts: { $lt: MAX_CODE_ATTEMPTS },
-      expiresAt: { $gt: now },
-    }).select('+passwordHash');
-    if (!consumed) {
-      return res.status(400).json({ message: 'That verification code is invalid or expired. Request a new code.' });
-    }
-
-    if (await User.exists({ email })) {
-      return res.status(409).json({ message: 'An account with this email already exists.' });
-    }
-    const username = await createUniqueUsername(consumed.fullName);
-    const user = new User({
-      fullName: consumed.fullName,
-      username,
-      email,
-      password: consumed.passwordHash,
-      role: 'STUDENT',
-    });
-    user.$locals.passwordAlreadyHashed = true;
-    await user.save();
+    // Never accept role from public registration; all new accounts are students.
+    const username = await createUniqueUsername(fullName);
+    const user = await User.create({ fullName, username, email, password, role: 'STUDENT' });
     return res.status(201).json({ user: userPayload(user), token: createToken(user) });
   } catch (error) {
     if (error.code === 11000) {
       if (error.keyPattern?.username) {
-        return res.status(409).json({ message: 'That username was just claimed. Please request a new code.' });
+        return res.status(409).json({ message: 'That username was just claimed. Please try again.' });
       }
       return res.status(409).json({ message: 'An account with this email already exists.' });
     }
-    if (error.status) return res.status(error.status).json({ message: error.message });
-    if (error.name === 'ValidationError') return res.status(400).json({ message: error.message });
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
     return next(error);
   }
 }
@@ -234,69 +90,12 @@ async function login(req, res, next) {
 
     const identifierQuery = identifier.includes('@') ? { email: identifier } : { username: identifier };
     const user = await User.findOne(identifierQuery).select('+password');
-    if (!user || !user.password || !(await user.matchPassword(password)) || !user.isActive) {
+    if (!user || !(await user.matchPassword(password)) || !user.isActive) {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
 
     return res.json({ user: userPayload(user), token: createToken(user) });
   } catch (error) {
-    return next(error);
-  }
-}
-
-async function googleLogin(req, res, next) {
-  try {
-    const credential = typeof req.body.credential === 'string' ? req.body.credential : '';
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    if (!clientId) throw httpError(503, 'Google sign-in is not configured. Please contact the system administrator.');
-    if (!credential || credential.length > 10000) {
-      return res.status(400).json({ message: 'A valid Google sign-in credential is required.' });
-    }
-
-    let payload;
-    try {
-      const ticket = await googleOAuthClient.verifyIdToken({ idToken: credential, audience: clientId });
-      payload = ticket.getPayload();
-    } catch {
-      return res.status(401).json({ message: 'Google could not verify this sign-in. Please try again.' });
-    }
-    if (!payload?.sub || !payload.email || payload.email_verified !== true || !payload.name) {
-      return res.status(401).json({ message: 'Use a Google account with a verified email address.' });
-    }
-
-    const email = payload.email.trim().toLowerCase();
-    let user = await User.findOne({ email }).select('+googleId');
-    if (user) {
-      if (user.role !== 'STUDENT') {
-        return res.status(403).json({ message: 'Google sign-in is only available for student accounts. Use your provisioned account to sign in.' });
-      }
-      if (!user.isActive) return res.status(401).json({ message: 'This account has been deactivated.' });
-      if (user.googleId && user.googleId !== payload.sub) {
-        return res.status(409).json({ message: 'This email is already linked to a different Google account.' });
-      }
-      if (!user.googleId) {
-        user.googleId = payload.sub;
-        await user.save();
-      }
-    } else {
-      const fullName = payload.name.trim().slice(0, 150);
-      if (!fullName) return res.status(400).json({ message: 'Your Google profile must include a name.' });
-      const username = await createUniqueUsername(fullName);
-      user = await User.create({
-        fullName,
-        username,
-        email,
-        googleId: payload.sub,
-        role: 'STUDENT',
-      });
-    }
-    return res.json({ user: userPayload(user), token: createToken(user) });
-  } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({ message: 'This Google account could not be linked. Please sign in with your existing method.' });
-    }
-    if (error.status) return res.status(error.status).json({ message: error.message });
-    if (error.name === 'ValidationError') return res.status(400).json({ message: error.message });
     return next(error);
   }
 }
@@ -465,12 +264,4 @@ async function uploadProfileImage(req, res, next) {
   }
 }
 
-module.exports = {
-  getMe,
-  googleLogin,
-  login,
-  register,
-  updateProfile,
-  uploadProfileImage,
-  verifyRegistration,
-};
+module.exports = { register, login, getMe, updateProfile, uploadProfileImage };

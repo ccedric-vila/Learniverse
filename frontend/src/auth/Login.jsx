@@ -2,8 +2,6 @@ import { useState } from 'react'
 import { ArrowRight, BookOpen, CalendarDays, Eye, EyeOff, LockKeyhole, MessageSquareText, Sparkles, UserRound } from 'lucide-react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
-import GoogleSignInButton from './GoogleSignInButton'
-import { googleSignInEnabled } from './googleSignInConfig'
 import './auth.css'
 
 function roleHome(role) {
@@ -11,7 +9,7 @@ function roleHome(role) {
 }
 
 export default function Login() {
-  const { login, googleLogin, user } = useAuth()
+  const { login, user } = useAuth()
   const navigate = useNavigate()
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -30,19 +28,6 @@ export default function Login() {
       navigate(roleHome(loggedInUser.role), { replace: true })
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Unable to log in. Please try again.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleGoogleSignIn(credential) {
-    setError('')
-    setSubmitting(true)
-    try {
-      const loggedInUser = await googleLogin(credential)
-      navigate(roleHome(loggedInUser.role), { replace: true })
-    } catch (requestError) {
-      setError(requestError.response?.data?.message || 'Unable to sign in with Google. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -96,12 +81,6 @@ export default function Login() {
               </div>
             </div>
             <button type="submit" disabled={submitting}>{submitting ? 'Signing in…' : <>Sign in <ArrowRight size={17} /></>}</button>
-            {googleSignInEnabled && (
-              <>
-                <div className="auth-divider"><span>or</span></div>
-                <GoogleSignInButton onSuccess={handleGoogleSignIn} onError={setError} />
-              </>
-            )}
             <p className="auth-switch">New to The Learniverse? <Link to="/register" viewTransition className="auth-switch-link">Create an account</Link></p>
           </form>
           <p className="auth-form-footnote">A shared learning space for every subject.</p>
