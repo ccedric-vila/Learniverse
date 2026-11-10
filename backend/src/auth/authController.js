@@ -42,9 +42,17 @@ async function register(req, res, next) {
     const fullName = typeof req.body.fullName === 'string' ? req.body.fullName.trim() : '';
     const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
     const password = typeof req.body.password === 'string' ? req.body.password : '';
+    const role = req.body.role === undefined ? 'STUDENT' : req.body.role;
+    const department = typeof req.body.department === 'string' ? req.body.department.trim() : '';
 
     if (!fullName || !email || !password) {
       return res.status(400).json({ message: 'Full name, email, and password are required.' });
+    }
+    if (!['STUDENT', 'PROFESSOR'].includes(role)) {
+      return res.status(400).json({ message: 'Choose a valid account type.' });
+    }
+    if (role === 'PROFESSOR' && !DEPARTMENTS.includes(department)) {
+      return res.status(400).json({ message: 'Choose a valid department to register as a professor.' });
     }
     if (password.length < 8
       || !/[a-z]/.test(password)
@@ -61,9 +69,15 @@ async function register(req, res, next) {
       return res.status(409).json({ message: 'An account with this email already exists.' });
     }
 
-    // Never accept role from public registration; all new accounts are students.
     const username = await createUniqueUsername(fullName);
-    const user = await User.create({ fullName, username, email, password, role: 'STUDENT' });
+    const user = await User.create({
+      fullName,
+      username,
+      email,
+      password,
+      role,
+      ...(role === 'PROFESSOR' ? { department } : {}),
+    });
     return res.status(201).json({ user: userPayload(user), token: createToken(user) });
   } catch (error) {
     if (error.code === 11000) {

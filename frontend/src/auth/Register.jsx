@@ -4,12 +4,28 @@ import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import './auth.css'
 
+const DEPARTMENTS = [
+  'Department of Engineering',
+  'Department of Engineering Technology',
+  'Department of Information Technology and Computer Studies',
+  'Department of Industrial Education (Technical Teacher Education)',
+  'Department of Mathematics and Sciences',
+  'Department of Liberal Arts and Humanities',
+  'Department of Physical Education and NSTP',
+]
+
+function roleHome(role) {
+  return ({ ADMIN: '/admin', PROFESSOR: '/professor', STUDENT: '/student' })[role] || '/'
+}
+
 export default function Register() {
   const { register, user } = useAuth()
   const navigate = useNavigate()
+  const [role, setRole] = useState('STUDENT')
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [department, setDepartment] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [privacyAccepted, setPrivacyAccepted] = useState(false)
   const [privacyOpen, setPrivacyOpen] = useState(false)
@@ -25,7 +41,7 @@ export default function Register() {
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [privacyOpen])
 
-  if (user) return <Navigate to="/student" replace />
+  if (user) return <Navigate to={roleHome(user.role)} replace />
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -36,8 +52,14 @@ export default function Register() {
     }
     setSubmitting(true)
     try {
-      await register({ fullName: fullName.trim(), email: email.trim(), password })
-      navigate('/student', { replace: true })
+      const newUser = await register({
+        fullName: fullName.trim(),
+        email: email.trim(),
+        password,
+        role,
+        ...(role === 'PROFESSOR' ? { department } : {}),
+      })
+      navigate(roleHome(newUser.role), { replace: true })
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Unable to create your account. Please try again.')
     } finally {
@@ -67,13 +89,34 @@ export default function Register() {
           <form className="auth-card auth-register-card" onSubmit={handleSubmit}>
             <span className="auth-form-eyebrow">GET STARTED</span>
             <h1>Create your account</h1>
-            <p className="auth-card-intro">Set up your student account and join the learning.</p>
+            <p className="auth-card-intro">Choose your account type to get started.</p>
             {error && <p className="auth-error" role="alert">{error}</p>}
+            <fieldset className="auth-role-select">
+              <legend>I am registering as</legend>
+              <label>
+                <input type="radio" name="register-role" value="STUDENT" checked={role === 'STUDENT'} onChange={() => setRole('STUDENT')} />
+                <span>Student</span>
+              </label>
+              <label>
+                <input type="radio" name="register-role" value="PROFESSOR" checked={role === 'PROFESSOR'} onChange={() => setRole('PROFESSOR')} />
+                <span>Professor</span>
+              </label>
+            </fieldset>
             <div className="auth-field">
               <label htmlFor="register-name">Full name</label>
               <input id="register-name" type="text" autoComplete="name" minLength={2} maxLength={150} pattern="[A-Za-zÀ-ÖØ-öø-ÿ]+([ .'-][A-Za-zÀ-ÖØ-öø-ÿ]+)*" title="Use letters, spaces, apostrophes, periods, or hyphens." placeholder="Your name" required value={fullName} onChange={(event) => setFullName(event.target.value)} />
               <small className="auth-field-hint">Use letters, spaces, apostrophes, periods, or hyphens.</small>
             </div>
+            {role === 'PROFESSOR' && (
+              <div className="auth-field">
+                <label htmlFor="register-department">Department</label>
+                <select id="register-department" required value={department} onChange={(event) => setDepartment(event.target.value)}>
+                  <option value="">Select your department</option>
+                  {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+                <small className="auth-field-hint">A username will be generated from your name. You can update it in your profile.</small>
+              </div>
+            )}
             <div className="auth-field">
               <label htmlFor="register-email">Email address</label>
               <input id="register-email" type="email" autoComplete="email" maxLength={254} placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} />
