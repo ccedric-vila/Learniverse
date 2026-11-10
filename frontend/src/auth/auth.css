@@ -81,6 +81,7 @@
 @keyframes auth-orbit-drift { from { transform: translate3d(-9px, 6px, 0) scale(.97); } to { transform: translate3d(12px, -10px, 0) scale(1.04); } }
 @media (prefers-reduced-motion: reduce) { .auth-showcase::after { animation: none; } .auth-feature, .auth-input-wrap { transition: none; } }
 .auth-field-hint { color: #84938e; font-size: 10px; font-weight: 400; line-height: 1.5; letter-spacing: 0; }
+.auth-password-mismatch { color: #963d36; }
 .privacy-check { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: #69797d; font-size: 12px; }
 .privacy-check input { width: 15px; height: 15px; flex: 0 0 auto; margin: 0 2px 0 0; accent-color: #39766b; }
 .privacy-check label { cursor: pointer; }

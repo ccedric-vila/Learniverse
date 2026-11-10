@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, BookOpen, CalendarDays, Eye, EyeOff, LockKeyhole, MessageSquareText, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
@@ -25,12 +25,21 @@ export default function Register() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [department, setDepartment] = useState('')
+  const confirmPasswordInput = useRef(null)
   const [showPassword, setShowPassword] = useState(false)
   const [privacyAccepted, setPrivacyAccepted] = useState(false)
   const [privacyOpen, setPrivacyOpen] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const passwordsMatch = password === confirmPassword
+
+  useEffect(() => {
+    confirmPasswordInput.current?.setCustomValidity(
+      confirmPassword && !passwordsMatch ? 'Passwords do not match.' : '',
+    )
+  }, [confirmPassword, passwordsMatch])
 
   useEffect(() => {
     if (!privacyOpen) return undefined
@@ -46,6 +55,11 @@ export default function Register() {
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
+    if (!passwordsMatch) {
+      setError('Passwords do not match.')
+      confirmPasswordInput.current?.focus()
+      return
+    }
     if (!privacyAccepted) {
       setError('Please agree to the privacy policy to continue.')
       return
@@ -137,6 +151,36 @@ export default function Register() {
                 </button>
               </div>
               <small className="auth-field-hint">At least 8 characters, with uppercase and lowercase letters, a number, and a special character (such as !, @, or #).</small>
+            </div>
+            <div className="auth-field">
+              <label htmlFor="register-confirm-password">Confirm password</label>
+              <div className="auth-input-wrap auth-password-wrap">
+                <LockKeyhole size={17} aria-hidden="true" />
+                <input
+                  ref={confirmPasswordInput}
+                  id="register-confirm-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  required
+                  value={confirmPassword}
+                  aria-invalid={Boolean(confirmPassword) && !passwordsMatch}
+                  aria-describedby="register-confirm-password-feedback"
+                  placeholder="Re-enter your password"
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                />
+                <button
+                  className="auth-password-toggle"
+                  type="button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
+              <small id="register-confirm-password-feedback" className={confirmPassword && !passwordsMatch ? 'auth-field-hint auth-password-mismatch' : 'auth-field-hint'} aria-live="polite">
+                {confirmPassword && !passwordsMatch ? 'Passwords do not match.' : confirmPassword && passwordsMatch ? 'Passwords match.' : 'Enter your password again to confirm.'}
+              </small>
             </div>
             <div className="privacy-check">
               <input id="register-privacy" type="checkbox" checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />
